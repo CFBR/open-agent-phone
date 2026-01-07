@@ -301,7 +301,14 @@ None documented yet. This is the initial commit.
 
 ## Future Enhancements
 
-Potential features for later:
+**CLI Phase 2:**
+- [ ] `claude-phone doctor` - Health check for all services
+- [ ] `claude-phone device add/list/remove` - Device management
+- [ ] `claude-phone logs` - Tail service logs
+- [ ] `claude-phone update` - Self-update CLI
+- [ ] Linux support in install.sh
+
+**Other:**
 - [ ] Webhook notifications for call events
 - [ ] Call recording and transcripts
 - [ ] Multiple language support
