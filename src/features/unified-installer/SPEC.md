@@ -35,57 +35,59 @@ This complexity creates a high barrier to entry for homelabbers and developers w
 
 ## Acceptance Criteria
 
+> **Status: ✅ ALL COMPLETE (2026-01-07)**
+
 ### Installation
 
-- [ ] **AC-1**: Running `curl -fsSL https://install.claude-phone.com | bash` (or similar) downloads and installs the `claude-phone` CLI globally
-- [ ] **AC-2**: Install script detects OS (Mac/Linux) and installs appropriate binaries
-- [ ] **AC-3**: Install script verifies Docker is installed and running, exits with helpful message if not
-- [ ] **AC-4**: Install script verifies Claude Code CLI is installed, provides install instructions if missing
-- [ ] **AC-5**: After install, `claude-phone` command is available in PATH
+- [x] **AC-1**: Running `curl -fsSL https://install.claude-phone.com | bash` (or similar) downloads and installs the `claude-phone` CLI globally
+- [x] **AC-2**: Install script detects OS (Mac/Linux) and installs appropriate binaries
+- [x] **AC-3**: Install script verifies Docker is installed and running, exits with helpful message if not
+- [x] **AC-4**: Install script verifies Claude Code CLI is installed, provides install instructions if missing
+- [x] **AC-5**: After install, `claude-phone` command is available in PATH
 
 ### Setup Wizard
 
-- [ ] **AC-6**: `claude-phone setup` launches interactive wizard
-- [ ] **AC-7**: Wizard prompts for ElevenLabs API key with validation (test API call)
-- [ ] **AC-8**: Wizard prompts for OpenAI API key with validation (test API call)
-- [ ] **AC-9**: Wizard prompts for 3CX configuration: SIP domain, registrar IP, extension, auth ID, password
-- [ ] **AC-10**: Wizard prompts for first device setup: name, voice ID, system prompt
-- [ ] **AC-11**: Wizard saves configuration securely (appropriate file permissions)
-- [ ] **AC-12**: Wizard can be re-run to update configuration
+- [x] **AC-6**: `claude-phone setup` launches interactive wizard
+- [x] **AC-7**: Wizard prompts for ElevenLabs API key with validation (test API call)
+- [x] **AC-8**: Wizard prompts for OpenAI API key with validation (test API call)
+- [x] **AC-9**: Wizard prompts for 3CX configuration: SIP domain, registrar IP, extension, auth ID, password
+- [x] **AC-10**: Wizard prompts for first device setup: name, voice ID, system prompt
+- [x] **AC-11**: Wizard saves configuration securely (appropriate file permissions)
+- [x] **AC-12**: Wizard can be re-run to update configuration
 
 ### Validation
 
-- [ ] **AC-13**: `claude-phone doctor` runs full health check
-- [ ] **AC-14**: Doctor validates ElevenLabs API connectivity
-- [ ] **AC-15**: Doctor validates OpenAI API connectivity
-- [ ] **AC-16**: Doctor validates Claude Code CLI is accessible
-- [ ] **AC-17**: Doctor validates Docker is running
-- [ ] **AC-18**: Doctor reports clear pass/fail for each check with actionable error messages
+- [x] **AC-13**: `claude-phone doctor` runs full health check
+- [x] **AC-14**: Doctor validates ElevenLabs API connectivity
+- [x] **AC-15**: Doctor validates OpenAI API connectivity
+- [x] **AC-16**: Doctor validates Claude Code CLI is accessible
+- [x] **AC-17**: Doctor validates Docker is running
+- [x] **AC-18**: Doctor reports clear pass/fail for each check with actionable error messages
 
 ### Start/Stop
 
-- [ ] **AC-19**: `claude-phone start` launches all required services (voice-app container, claude-api-server)
-- [ ] **AC-20**: Start command shows status of each component coming up
-- [ ] **AC-21**: `claude-phone stop` cleanly shuts down all services
-- [ ] **AC-22**: `claude-phone status` shows running state of all components
-- [ ] **AC-23**: `claude-phone logs` tails combined logs from all services
+- [x] **AC-19**: `claude-phone start` launches all required services (voice-app container, claude-api-server)
+- [x] **AC-20**: Start command shows status of each component coming up
+- [x] **AC-21**: `claude-phone stop` cleanly shuts down all services
+- [x] **AC-22**: `claude-phone status` shows running state of all components
+- [x] **AC-23**: `claude-phone logs` tails combined logs from all services
 
 ### Device Management
 
-- [ ] **AC-24**: `claude-phone device add` launches interactive device wizard
-- [ ] **AC-25**: Device wizard prompts for: name, SIP extension, auth credentials, ElevenLabs voice ID, system prompt
-- [ ] **AC-26**: `claude-phone device list` shows all configured devices
-- [ ] **AC-27**: `claude-phone device remove <name>` removes a device configuration
+- [x] **AC-24**: `claude-phone device add` launches interactive device wizard
+- [x] **AC-25**: Device wizard prompts for: name, SIP extension, auth credentials, ElevenLabs voice ID, system prompt
+- [x] **AC-26**: `claude-phone device list` shows all configured devices
+- [x] **AC-27**: `claude-phone device remove <name>` removes a device configuration
 
 ### Updates
 
-- [ ] **AC-28**: `claude-phone update` downloads and installs latest version
-- [ ] **AC-29**: Update preserves existing configuration
+- [x] **AC-28**: `claude-phone update` downloads and installs latest version
+- [x] **AC-29**: Update preserves existing configuration
 
 ### Help
 
-- [ ] **AC-30**: `claude-phone` with no args shows help with all available commands
-- [ ] **AC-31**: Each subcommand supports `--help` flag
+- [x] **AC-30**: `claude-phone` with no args shows help with all available commands
+- [x] **AC-31**: Each subcommand supports `--help` flag
 
 ## Technical Constraints
 
