@@ -15,6 +15,9 @@ import { configShowCommand } from '../lib/commands/config/show.js';
 import { configPathCommand } from '../lib/commands/config/path.js';
 import { configResetCommand } from '../lib/commands/config/reset.js';
 import { updateCommand } from '../lib/commands/update.js';
+import { backupCommand } from '../lib/commands/backup.js';
+import { restoreCommand } from '../lib/commands/restore.js';
+import { uninstallCommand } from '../lib/commands/uninstall.js';
 
 const program = new Command();
 
@@ -185,6 +188,42 @@ program
       await updateCommand();
     } catch (error) {
       console.error(chalk.red(`\n✗ Update failed: ${error.message}\n`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('backup')
+  .description('Create timestamped backup of configuration')
+  .action(async () => {
+    try {
+      await backupCommand();
+    } catch (error) {
+      console.error(chalk.red(`\n✗ Backup failed: ${error.message}\n`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('restore')
+  .description('Restore configuration from backup')
+  .action(async () => {
+    try {
+      await restoreCommand();
+    } catch (error) {
+      console.error(chalk.red(`\n✗ Restore failed: ${error.message}\n`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('uninstall')
+  .description('Uninstall Claude Phone completely')
+  .action(async () => {
+    try {
+      await uninstallCommand();
+    } catch (error) {
+      console.error(chalk.red(`\n✗ Uninstall failed: ${error.message}\n`));
       process.exit(1);
     }
   });
