@@ -1,0 +1,37 @@
+version: '3.8'
+
+# ============================================================================
+# Docker Compose Override for Bridge Mode (Mac Docker Desktop)
+# ============================================================================
+#
+# Use this on Mac where host networking doesn't work correctly:
+#   docker compose -f docker-compose.yml -f docker-compose.bridge.yml up -d
+#
+# Or set in .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.bridge.yml
+#
+# IMPORTANT: You still need EXTERNAL_IP set to your Mac's LAN IP!
+# ============================================================================
+
+services:
+  drachtio:
+    network_mode: bridge
+    ports:
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "9022:9022/tcp"
+
+  freeswitch:
+    network_mode: bridge
+    ports:
+      - "5080:5080/udp"
+      - "8021:8021/tcp"
+      # RTP port range - limited to 100 ports for ~50 concurrent calls
+      # WARNING: Don't map more ports - Docker creates a process per port
+      - "20000-20100:20000-20100/udp"
+
+  voice-app:
+    network_mode: bridge
+    ports:
+      - "3000:3000/tcp"
+      - "3001:3001/tcp"

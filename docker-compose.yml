@@ -13,6 +13,7 @@ services:
     command: >
       drachtio
       --contact "sip:*:5060;transport=tcp,udp"
+      --external-ip ${EXTERNAL_IP}
       --secret ${DRACHTIO_SECRET:-cymru}
       --port 9022
       --loglevel info
@@ -30,9 +31,13 @@ services:
       --sip-port 5080
       --rtp-range-start 20000
       --rtp-range-end 20100
+      --ext-rtp-ip ${EXTERNAL_IP}
+      --ext-sip-ip ${EXTERNAL_IP}
+      --advertise-external-ip
     environment:
       # CRITICAL: Set this to your server's LAN IP
       # This IP goes into SDP packets so 3CX knows where to send audio
+      # Note: drachtio-freeswitch-mrf only accepts CLI flags, not env vars
       - EXTERNAL_IP=${EXTERNAL_IP}
     # Ports (for reference):
     # - 8021: ESL (Event Socket Library)
