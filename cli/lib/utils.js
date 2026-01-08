@@ -1,5 +1,30 @@
 import os from 'os';
+import path from 'path';
 import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/**
+ * Get the project root directory (where voice-app and claude-api-server live)
+ * This resolves from the CLI package location, not process.cwd()
+ *
+ * Directory structure:
+ *   claude-phone/           <- project root (returned)
+ *   ├── cli/
+ *   │   └── lib/
+ *   │       └── utils.js    <- this file
+ *   ├── voice-app/
+ *   └── claude-api-server/
+ *
+ * @returns {string} Absolute path to project root
+ */
+export function getProjectRoot() {
+  // utils.js is at cli/lib/utils.js
+  // Project root is two levels up: cli/lib -> cli -> project root
+  return path.resolve(__dirname, '..', '..');
+}
 
 /**
  * Get local IP address (best guess)

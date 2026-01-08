@@ -16,7 +16,7 @@ import {
   validateIP,
   validateHostname
 } from '../validators.js';
-import { getLocalIP } from '../utils.js';
+import { getLocalIP, getProjectRoot } from '../utils.js';
 
 /**
  * Setup command - Interactive wizard for configuration
@@ -124,8 +124,8 @@ function createDefaultConfig() {
     },
     devices: [],
     paths: {
-      voiceApp: path.resolve(process.cwd(), 'voice-app'),
-      claudeApiServer: path.resolve(process.cwd(), 'claude-api-server')
+      voiceApp: path.join(getProjectRoot(), 'voice-app'),
+      claudeApiServer: path.join(getProjectRoot(), 'claude-api-server')
     }
   };
 }
