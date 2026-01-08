@@ -23,6 +23,10 @@ var ttsService = require("./lib/tts-service");
 var deviceRegistry = require("./lib/device-registry");
 var MultiRegistrar = require("./lib/multi-registrar");
 
+// Connection retry utility
+var connectionRetry = require("./lib/connection-retry");
+var connectWithRetry = connectionRetry.connectWithRetry;
+
 // Import outbound calling routes
 var outboundModule = require("./lib/outbound-routes");
 var outboundRouter = outboundModule.router;
@@ -131,22 +135,37 @@ srf.on("error", function(err) {
   drachtioConnected = false;
 });
 
-// Initialize FreeSWITCH MRF
+// Initialize FreeSWITCH MRF with retry logic
 var mrf = new Mrf(srf);
 
-mrf.connect({
-  address: config.freeswitch.host,
-  port: config.freeswitch.port,
-  secret: config.freeswitch.secret
+// Define FreeSWITCH connection function
+function connectToFreeswitch() {
+  return mrf.connect({
+    address: config.freeswitch.host,
+    port: config.freeswitch.port,
+    secret: config.freeswitch.secret
+  });
+}
+
+// Connect with exponential backoff retry
+// Retry schedule: 1s, 2s, 3s, 5s, 5s, 5s, 10s, 10s, 10s, 10s (max 10 retries)
+connectWithRetry(connectToFreeswitch, {
+  maxRetries: 10,
+  retryDelays: [1000, 2000, 3000, 5000, 5000, 5000, 10000, 10000, 10000, 10000],
+  name: 'FREESWITCH'
 })
 .then(function(ms) {
   mediaServer = ms;
   freeswitchConnected = true;
-  console.log("[" + new Date().toISOString() + "] FREESWITCH Connected");
+  console.log("[" + new Date().toISOString() + "] FREESWITCH Ready for calls");
   checkReadyState();
 })
 .catch(function(err) {
-  console.error("[" + new Date().toISOString() + "] FREESWITCH Failed: " + err.message);
+  console.error("[" + new Date().toISOString() + "] FREESWITCH Connection failed permanently: " + err.message);
+  console.error("[" + new Date().toISOString() + "] Please check:");
+  console.error("  1. FreeSWITCH container is running: docker ps | grep freeswitch");
+  console.error("  2. ESL port 8021 is accessible");
+  console.error("  3. EXTERNAL_IP is set correctly in .env");
   process.exit(1);
 });
 
