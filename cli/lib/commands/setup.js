@@ -320,9 +320,9 @@ async function setupPi(config) {
   console.log(chalk.bold('\n📡 API Configuration'));
   config = await setupAPIKeys(config);
 
-  // Step 2: 3CX/SIP Configuration
-  console.log(chalk.bold('\n☎️  SIP Configuration'));
-  config = await setupSIP(config);
+  // Step 2: 3CX SBC Configuration (Pi mode uses SBC)
+  console.log(chalk.bold('\n📡 3CX SBC Connection'));
+  config = await setupSBC(config);
 
   // Step 3: Device Configuration
   console.log(chalk.bold('\n🤖 Device Configuration'));
@@ -489,7 +489,7 @@ async function setupAPIKeys(config) {
 }
 
 /**
- * Setup SIP configuration
+ * Setup SIP configuration (standard/Mac mode)
  * @param {object} config - Current config
  * @returns {Promise<object>} Updated config
  */
@@ -529,6 +529,41 @@ async function setupSIP(config) {
 
   config.sip.domain = answers.domain;
   config.sip.registrar = answers.registrar;
+
+  return config;
+}
+
+/**
+ * Setup SBC configuration (Pi mode only)
+ * @param {object} config - Current config
+ * @returns {Promise<object>} Updated config
+ */
+async function setupSBC(config) {
+  // Display pre-requisite information
+  console.log(chalk.cyan('\nℹ️  Pre-requisite: You must create an SBC in 3CX Admin first'));
+  console.log(chalk.gray('   (Admin → Settings → SBC → Add SBC → Raspberry Pi)\n'));
+
+  const answers = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'fqdn',
+      message: '3CX FQDN (e.g., mycompany.3cx.us):',
+      default: config.sip.domain,
+      validate: (input) => {
+        if (!input || input.trim() === '') {
+          return '3CX FQDN is required';
+        }
+        if (!validateHostname(input)) {
+          return 'Invalid hostname format';
+        }
+        return true;
+      }
+    }
+  ]);
+
+  // Set domain and registrar to same value (SBC handles the connection)
+  config.sip.domain = answers.fqdn;
+  config.sip.registrar = answers.fqdn;
 
   return config;
 }
