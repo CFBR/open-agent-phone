@@ -120,6 +120,7 @@ srf.on("connect", function(err, hostport) {
       registrar: config.sip.registrar,
       registrar_port: config.sip.registrar_port,
       local_address: localAddress,
+      local_port: parseInt(process.env.DRACHTIO_SIP_PORT) || 5060,
       expiry: config.sip.expiry
     });
 

@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
-import { getPidPath } from './config.js';
+import path from 'path';
+import { getPidPath, getConfigDir } from './config.js';
 
 /**
  * Get the server PID from the PID file
@@ -145,5 +146,31 @@ export async function stopServer(pidPath = null) {
   // Remove PID file
   if (fs.existsSync(pidPath)) {
     fs.unlinkSync(pidPath);
+  }
+}
+
+/**
+ * Save a PID file for a named service
+ * @param {string} name - Service name (e.g., 'claude-api-server')
+ * @param {number} pid - Process ID
+ */
+export function savePid(name, pid) {
+  const configDir = getConfigDir();
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true, mode: 0o700 });
+  }
+  const pidFile = path.join(configDir, `${name}.pid`);
+  fs.writeFileSync(pidFile, pid.toString(), { mode: 0o600 });
+}
+
+/**
+ * Remove a PID file for a named service
+ * @param {string} name - Service name (e.g., 'claude-api-server')
+ */
+export function removePid(name) {
+  const configDir = getConfigDir();
+  const pidFile = path.join(configDir, `${name}.pid`);
+  if (fs.existsSync(pidFile)) {
+    fs.unlinkSync(pidFile);
   }
 }

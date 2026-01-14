@@ -76,8 +76,9 @@ class DeviceRegistry {
         this.devicesByName[device.name.toLowerCase()] = device;
       }
 
-      // Ensure Morpheus default exists
-      if (!this.devices[MORPHEUS_DEFAULT.extension]) {
+      // Only use Morpheus default if NO devices are configured
+      if (Object.keys(this.devices).length === 0) {
+        logger.warn('No devices configured, using Morpheus default');
         this.devices[MORPHEUS_DEFAULT.extension] = MORPHEUS_DEFAULT;
         this.devicesByName[MORPHEUS_DEFAULT.name.toLowerCase()] = MORPHEUS_DEFAULT;
       }

@@ -1,7 +1,12 @@
 import net from 'net';
+import dgram from 'dgram';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 /**
- * Check if a port is in use
+ * Check if a TCP port is in use
  * @param {number} port - Port number to check
  * @param {number} [timeout=1000] - Timeout in milliseconds
  * @returns {Promise<object>} Port check result
@@ -63,10 +68,68 @@ export async function checkPort(port, timeout = 1000) {
 }
 
 /**
- * Detect if 3CX SBC is running (checks port 5060)
- * @returns {Promise<boolean>} True if 3CX SBC detected (port 5060 in use)
+ * Check if a UDP port is in use by trying to bind to it
+ * @param {number} port - Port number to check
+ * @param {number} [timeout=1000] - Timeout in milliseconds
+ * @returns {Promise<boolean>} True if port is in use
+ */
+export async function checkUdpPort(port, timeout = 1000) {
+  return new Promise((resolve) => {
+    const socket = dgram.createSocket('udp4');
+
+    const timer = setTimeout(() => {
+      socket.close();
+      resolve(false);
+    }, timeout);
+
+    socket.on('error', (err) => {
+      clearTimeout(timer);
+      socket.close();
+      // EADDRINUSE means port is in use
+      resolve(err.code === 'EADDRINUSE' || err.code === 'EACCES');
+    });
+
+    socket.bind(port, '0.0.0.0', () => {
+      // Successfully bound = port was free
+      clearTimeout(timer);
+      socket.close();
+      resolve(false);
+    });
+  });
+}
+
+/**
+ * Check if 3CX SBC process is running
+ * @returns {Promise<boolean>} True if 3cxsbc process is running
+ */
+export async function check3cxSbcProcess() {
+  try {
+    const { stdout } = await execAsync('pgrep -x 3cxsbc || systemctl is-active 3cxsbc 2>/dev/null');
+    return stdout.trim().length > 0 || stdout.includes('active');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detect if 3CX SBC is running
+ * Checks: 1) 3cxsbc process, 2) UDP port 5060, 3) TCP port 5060
+ * @returns {Promise<boolean>} True if 3CX SBC detected
  */
 export async function detect3cxSbc() {
-  const result = await checkPort(5060);
-  return result.inUse;
+  // Check for 3cxsbc process first (most reliable)
+  const processRunning = await check3cxSbcProcess();
+  if (processRunning) {
+    return true;
+  }
+
+  // Check UDP port 5060 (SIP typically uses UDP)
+  const udpInUse = await checkUdpPort(5060);
+  if (udpInUse) {
+    return true;
+  }
+
+  // Fall back to TCP check
+  const tcpResult = await checkPort(5060);
+  return tcpResult.inUse;
 }

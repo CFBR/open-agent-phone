@@ -18,7 +18,7 @@ import {
 } from '../validators.js';
 import { getLocalIP, getProjectRoot } from '../utils.js';
 import { detectPlatform, isRaspberryPi } from '../platform.js';
-import { checkPort } from '../port-check.js';
+import { checkPort, detect3cxSbc } from '../port-check.js';
 import { checkPiPrerequisites } from '../prerequisites.js';
 import { isReachable, checkClaudeApiServer } from '../network.js';
 
@@ -61,10 +61,18 @@ export async function setupCommand() {
   const config = hasConfig ? await loadConfig() : createDefaultConfig();
 
   // Branch based on platform
-  if (isPi) {
-    await setupPi(config);
-  } else {
-    await setupStandard(config);
+  try {
+    if (isPi) {
+      await setupPi(config);
+    } else {
+      await setupStandard(config);
+    }
+  } catch (error) {
+    console.error(chalk.red('\n\n❌ Setup failed with error:'));
+    console.error(chalk.red(error.message));
+    console.error(chalk.gray('\nStack trace:'));
+    console.error(chalk.gray(error.stack));
+    process.exit(1);
   }
 
 }
@@ -198,27 +206,21 @@ async function setupPi(config) {
 
   // Detect 3CX SBC (AC24: Handle port detection failure)
   console.log(chalk.bold('\n🔍 Network Detection'));
-  const sbc3cxSpinner = ora('Checking for 3CX SBC on port 5060...').start();
+  const sbc3cxSpinner = ora('Checking for 3CX SBC (process + UDP/TCP port 5060)...').start();
 
   let has3cxSbc;
   let portCheckError = false;
 
   try {
-    const portResult = await checkPort(5060);
-    if (portResult.error) {
-      portCheckError = true;
-      sbc3cxSpinner.warn('Port 5060 check failed - permission denied or network error');
+    has3cxSbc = await detect3cxSbc();
+    if (has3cxSbc) {
+      sbc3cxSpinner.succeed('3CX SBC detected - will use port 5070 for drachtio');
     } else {
-      has3cxSbc = portResult.inUse;
-      if (has3cxSbc) {
-        sbc3cxSpinner.succeed('3CX SBC detected - will use port 5070 for drachtio');
-      } else {
-        sbc3cxSpinner.succeed('No 3CX SBC detected - will use standard port 5060');
-      }
+      sbc3cxSpinner.succeed('No 3CX SBC detected - will use standard port 5060');
     }
   } catch (err) {
     portCheckError = true;
-    sbc3cxSpinner.warn('Port detection failed');
+    sbc3cxSpinner.warn('Port detection failed: ' + err.message);
   }
 
   // AC24: Manual override when port detection fails
@@ -244,38 +246,43 @@ async function setupPi(config) {
   config.deployment.pi.has3cxSbc = has3cxSbc;
   config.deployment.pi.drachtioPort = has3cxSbc ? 5070 : 5060;
 
-  // Ask for Mac IP
-  const macAnswers = await inquirer.prompt([
+  // Ask for Mac IP (separate prompts to avoid inquirer issues)
+  console.log(chalk.gray('[DEBUG] Starting Mac IP prompt...'));
+  const { macIp } = await inquirer.prompt([
     {
       type: 'input',
       name: 'macIp',
       message: 'Mac IP address (where claude-api-server runs):',
       default: config.deployment.pi.macIp || '',
-      validate: async (input) => {
+      validate: (input) => {
         if (!input || input.trim() === '') {
           return 'Mac IP is required';
         }
         if (!validateIP(input)) {
           return 'Invalid IP address format';
         }
-
-        // Check reachability
-        const spinner = ora('Checking reachability...').start();
-        const reachable = await isReachable(input);
-        spinner.stop();
-
-        if (!reachable) {
-          return `Cannot reach ${input}. Make sure Mac is on the same network.`;
-        }
-
         return true;
       }
-    },
+    }
+  ]);
+  console.log(chalk.gray('[DEBUG] Mac IP entered:', macIp));
+
+  // Check reachability after prompt (not inside validate - ora conflicts with inquirer)
+  const reachSpinner = ora('Checking Mac reachability...').start();
+  const reachable = await isReachable(macIp);
+  if (reachable) {
+    reachSpinner.succeed(`Mac ${macIp} is reachable`);
+  } else {
+    reachSpinner.warn(`Cannot reach ${macIp} - make sure Mac is on same network`);
+  }
+
+  console.log(chalk.gray('[DEBUG] Starting port prompt...'));
+  const { claudeApiPort } = await inquirer.prompt([
     {
       type: 'input',
       name: 'claudeApiPort',
       message: 'Claude API server port (on Mac):',
-      default: config.server?.claudeApiPort || 3333,
+      default: String(config.server?.claudeApiPort || 3333),
       validate: (input) => {
         const port = parseInt(input, 10);
         if (isNaN(port) || port < 1024 || port > 65535) {
@@ -285,10 +292,17 @@ async function setupPi(config) {
       }
     }
   ]);
+  console.log(chalk.gray('[DEBUG] Port entered:', claudeApiPort));
+
+  const macAnswers = { macIp, claudeApiPort };
+
+  console.log(chalk.gray('[DEBUG] Prompts completed. Answers:'), JSON.stringify(macAnswers));
 
   config.deployment.pi.macIp = macAnswers.macIp;
   config.server = config.server || {};
   config.server.claudeApiPort = parseInt(macAnswers.claudeApiPort, 10);
+
+  console.log(chalk.gray('[DEBUG] Config updated, checking API health...'));
 
   // Check API server health
   const apiHealthSpinner = ora('Checking Claude API server health...').start();

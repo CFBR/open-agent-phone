@@ -22,26 +22,26 @@ function generateSecret() {
 export async function checkDocker() {
   // Check if docker command exists
   const installed = await new Promise((resolve) => {
-    const check = spawn('which', ['docker']);
-    check.on('close', (code) => {
-      resolve(code === 0);
-    });
+    const check = spawn('docker', ['--version']);
+    check.on('close', (code) => resolve(code === 0));
+    check.on('error', () => resolve(false));
   });
 
   if (!installed) {
     return {
       installed: false,
       running: false,
-      error: 'Docker not found. Please install Docker Desktop from https://www.docker.com/products/docker-desktop'
+      error: 'Docker not found. Please install Docker from https://docs.docker.com/engine/install/'
     };
   }
 
-  // Check if Docker daemon is running
+  // Check if Docker daemon is running by running a simple command
   const running = await new Promise((resolve) => {
-    const check = spawn('docker', ['info']);
-    check.on('close', (code) => {
-      resolve(code === 0);
+    const check = spawn('docker', ['ps', '-q'], {
+      stdio: ['pipe', 'pipe', 'pipe']
     });
+    check.on('close', (code) => resolve(code === 0));
+    check.on('error', () => resolve(false));
   });
 
   if (!running) {
@@ -79,6 +79,12 @@ export function generateDockerCompose(config) {
     ? config.deployment.pi.drachtioPort
     : 5060;
 
+  // Determine if running on Pi (ARM64) - use specific versions with platform
+  const isPiMode = config.deployment && config.deployment.mode === 'pi-split';
+  const drachtioImage = isPiMode ? 'drachtio/drachtio-server:0.9.4' : 'drachtio/drachtio-server:latest';
+  const freeswitchImage = 'drachtio/drachtio-freeswitch-mrf:latest';
+  const platformLine = isPiMode ? '\n    platform: linux/arm64' : '';
+
   return `version: '3.8'
 
 # CRITICAL: All containers must use network_mode: host
@@ -87,7 +93,7 @@ export function generateDockerCompose(config) {
 
 services:
   drachtio:
-    image: drachtio/drachtio-server:latest
+    image: ${drachtioImage}${platformLine}
     container_name: drachtio
     restart: unless-stopped
     network_mode: host
@@ -99,7 +105,7 @@ services:
       --loglevel info
 
   freeswitch:
-    image: drachtio/drachtio-freeswitch-mrf:latest
+    image: ${freeswitchImage}${platformLine}
     container_name: freeswitch
     restart: unless-stopped
     network_mode: host
@@ -143,9 +149,11 @@ export function generateEnvFile(config) {
 
   // Determine Claude API URL based on deployment mode
   let claudeApiUrl;
-  if (config.deployment && config.deployment.mode === 'pi-split' && config.deployment.pi && config.deployment.pi.macApiUrl) {
-    claudeApiUrl = config.deployment.pi.macApiUrl;
+  if (config.deployment && config.deployment.mode === 'pi-split' && config.deployment.pi && config.deployment.pi.macIp) {
+    // Pi mode: point to Mac's API server
+    claudeApiUrl = `http://${config.deployment.pi.macIp}:${config.server.claudeApiPort}`;
   } else {
+    // Standard mode: local API server
     claudeApiUrl = `http://localhost:${config.server.claudeApiPort}`;
   }
 
@@ -169,7 +177,8 @@ export function generateEnvFile(config) {
     '# FreeSWITCH Configuration',
     'FREESWITCH_HOST=127.0.0.1',
     'FREESWITCH_PORT=8021',
-    `FREESWITCH_SECRET=${config.secrets.freeswitch}`,
+    // Note: This is the default ESL password for drachtio/drachtio-freeswitch-mrf
+    'FREESWITCH_SECRET=JambonzR0ck$',
     '',
     '# 3CX / SIP Configuration',
     `SIP_DOMAIN=${config.sip.domain}`,

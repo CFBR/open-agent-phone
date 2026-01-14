@@ -35,7 +35,8 @@ class MultiRegistrar {
       registrar: this.baseConfig.registrar,
       registrar_port: this.baseConfig.registrar_port,
       expiry: this.baseConfig.expiry,
-      local_address: this.baseConfig.local_address
+      local_address: this.baseConfig.local_address,
+      local_port: this.baseConfig.local_port
     };
 
     console.log('[MULTI-REGISTRAR] Registering ' + device.name + ' (ext ' + device.extension + ')');
@@ -47,8 +48,10 @@ class MultiRegistrar {
    */
   sendRegister(device, config) {
     const self = this;
-    const uri = 'sip:' + config.domain + ':' + config.registrar_port;
-    const contact = 'sip:' + config.extension + '@' + config.local_address;
+    const uri = 'sip:' + config.registrar + ':' + config.registrar_port + ';transport=udp';
+    // Include local_port in Contact so INVITEs come to the right port (5070 when SBC is on 5060)
+    const localPort = config.local_port || 5060;
+    const contact = 'sip:' + config.extension + '@' + config.local_address + ':' + localPort;
 
     console.log('[MULTI-REGISTRAR] REGISTER ' + device.name + ' to ' + uri);
     console.log('[MULTI-REGISTRAR]   Contact: ' + contact);

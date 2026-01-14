@@ -6,6 +6,7 @@ import { loadConfig, configExists } from '../config.js';
 import { checkDocker, writeDockerConfig, startContainers } from '../docker.js';
 import { startServer, isServerRunning } from '../process-manager.js';
 import { isClaudeInstalled, sleep } from '../utils.js';
+import { checkClaudeApiServer } from '../network.js';
 
 /**
  * Start command - Launch all services
@@ -23,28 +24,47 @@ export async function startCommand() {
 
   // Load config
   const config = await loadConfig();
+  const isPiMode = config.deployment?.mode === 'pi-split';
 
-  // Verify paths
+  if (isPiMode) {
+    console.log(chalk.cyan('🥧 Pi Split-Mode detected\n'));
+  }
+
+  // Verify voice-app path exists
   if (!fs.existsSync(config.paths.voiceApp)) {
     console.log(chalk.red(`✗ Voice app not found at: ${config.paths.voiceApp}`));
     console.log(chalk.gray('  Update paths in configuration\n'));
     process.exit(1);
   }
 
-  if (!fs.existsSync(config.paths.claudeApiServer)) {
+  // Only check claude-api-server path in standard mode (not Pi mode)
+  if (!isPiMode && !fs.existsSync(config.paths.claudeApiServer)) {
     console.log(chalk.red(`✗ Claude API server not found at: ${config.paths.claudeApiServer}`));
     console.log(chalk.gray('  Update paths in configuration\n'));
     process.exit(1);
   }
 
-  // Check Claude CLI
-  if (!(await isClaudeInstalled())) {
+  // Check Claude CLI only in standard mode (Pi mode connects to Mac instead)
+  if (!isPiMode && !(await isClaudeInstalled())) {
     console.log(chalk.yellow('⚠️  Claude CLI not found'));
     console.log(chalk.gray('  Install from: https://claude.com/download\n'));
   }
 
+  // In Pi mode, verify Mac API server is reachable
+  if (isPiMode) {
+    const macApiUrl = `http://${config.deployment.pi.macIp}:${config.server.claudeApiPort}`;
+    const macSpinner = ora(`Checking Mac API server at ${macApiUrl}...`).start();
+    const apiHealth = await checkClaudeApiServer(macApiUrl);
+    if (apiHealth.healthy) {
+      macSpinner.succeed(`Mac API server is healthy at ${macApiUrl}`);
+    } else {
+      macSpinner.warn(`Mac API server not responding at ${macApiUrl}`);
+      console.log(chalk.yellow('  ⚠️  Make sure "claude-phone api-server" is running on your Mac\n'));
+    }
+  }
+
   // Check Docker
-  const spinner = ora('Checking Docker...').start();
+  let spinner = ora('Checking Docker...').start();
   const dockerStatus = await checkDocker();
 
   if (!dockerStatus.installed || !dockerStatus.running) {
@@ -100,25 +120,31 @@ export async function startCommand() {
   await sleep(3000);
   spinner.succeed('Containers initialized');
 
-  // Start claude-api-server
-  spinner.start('Starting Claude API server...');
-  try {
-    if (await isServerRunning()) {
-      spinner.warn('Claude API server already running');
-    } else {
-      await startServer(config.paths.claudeApiServer, config.server.claudeApiPort);
-      spinner.succeed(`Claude API server started on port ${config.server.claudeApiPort}`);
+  // Start claude-api-server (only in standard mode - Pi mode uses Mac)
+  if (!isPiMode) {
+    spinner.start('Starting Claude API server...');
+    try {
+      if (await isServerRunning()) {
+        spinner.warn('Claude API server already running');
+      } else {
+        await startServer(config.paths.claudeApiServer, config.server.claudeApiPort);
+        spinner.succeed(`Claude API server started on port ${config.server.claudeApiPort}`);
+      }
+    } catch (error) {
+      spinner.fail(`Failed to start server: ${error.message}`);
+      throw error;
     }
-  } catch (error) {
-    spinner.fail(`Failed to start server: ${error.message}`);
-    throw error;
   }
 
   // Success
   console.log(chalk.bold.green('\n✓ All services running!\n'));
   console.log(chalk.gray('Services:'));
   console.log(chalk.gray(`  • Docker containers: drachtio, freeswitch, voice-app`));
-  console.log(chalk.gray(`  • Claude API server: http://localhost:${config.server.claudeApiPort}`));
+  if (isPiMode) {
+    console.log(chalk.gray(`  • Mac API server: http://${config.deployment.pi.macIp}:${config.server.claudeApiPort}`));
+  } else {
+    console.log(chalk.gray(`  • Claude API server: http://localhost:${config.server.claudeApiPort}`));
+  }
   console.log(chalk.gray(`  • Voice app API: http://localhost:${config.server.httpPort}\n`));
   console.log(chalk.gray('Ready to receive calls on:'));
   for (const device of config.devices) {

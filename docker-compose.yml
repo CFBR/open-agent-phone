@@ -29,8 +29,8 @@ services:
     command: >
       freeswitch
       --sip-port 5080
-      --rtp-range-start 20000
-      --rtp-range-end 20100
+      --rtp-range-start 30000
+      --rtp-range-end 30100
       --ext-rtp-ip ${EXTERNAL_IP}
       --ext-sip-ip ${EXTERNAL_IP}
       --advertise-external-ip
@@ -42,7 +42,7 @@ services:
     # Ports (for reference):
     # - 8021: ESL (Event Socket Library)
     # - 5080: Internal SIP
-    # - 20000-20100: RTP Audio
+    # - 30000-30100: RTP Audio (changed from 20000-20100 to avoid conflict with 3CX SBC)
 
   voice-app:
     build: ./voice-app
