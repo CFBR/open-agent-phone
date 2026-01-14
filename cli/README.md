@@ -4,7 +4,7 @@ Unified command-line interface for Claude Phone. Transform multi-component manua
 
 ## Installation
 
-### One-Line Install (Mac)
+### One-Line Install (macOS/Linux)
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/networkchuck/claude-phone/main/install.sh | bash
@@ -179,7 +179,7 @@ Launches:
 
 ## Requirements
 
-- macOS (Linux support coming)
+- macOS or Linux
 - Node.js 18+
 - Docker Desktop
 - Claude CLI (for claude-api-server)

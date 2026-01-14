@@ -246,23 +246,23 @@ export async function doctorCommand() {
 
   // Check 6: Claude API server
   if (isPiSplit) {
-    // Pi-split mode: Check Mac IP reachability
-    const macIpSpinner = ora('Checking Mac IP reachability...').start();
-    const macIp = config.deployment.pi.macIp;
-    const macReachable = await isReachable(macIp);
+    // Pi-split mode: Check API server IP reachability
+    const apiIpSpinner = ora('Checking API server IP reachability...').start();
+    const apiServerIp = config.deployment.pi.macIp;
+    const apiServerReachable = await isReachable(apiServerIp);
 
-    if (macReachable) {
-      macIpSpinner.succeed(chalk.green(`Mac IP reachable (${macIp})`));
+    if (apiServerReachable) {
+      apiIpSpinner.succeed(chalk.green(`API server IP reachable (${apiServerIp})`));
       passedCount++;
     } else {
-      macIpSpinner.fail(chalk.red(`Mac IP not reachable: ${macIp}`));
-      console.log(chalk.gray('  → Check network connection between Pi and Mac\n'));
+      apiIpSpinner.fail(chalk.red(`API server IP not reachable: ${apiServerIp}`));
+      console.log(chalk.gray('  → Check network connection between Pi and API server\n'));
     }
-    checks.push({ name: 'Mac IP reachability', passed: macReachable });
+    checks.push({ name: 'API server IP reachability', passed: apiServerReachable });
 
-    // Check Claude API server on Mac
-    const apiServerSpinner = ora('Checking Claude API server on Mac...').start();
-    const apiUrl = `http://${macIp}:${config.server.claudeApiPort}`;
+    // Check Claude API server on remote server
+    const apiServerSpinner = ora('Checking Claude API server...').start();
+    const apiUrl = `http://${apiServerIp}:${config.server.claudeApiPort}`;
     const apiHealth = await checkClaudeApiHealth(apiUrl);
 
     if (apiHealth.healthy) {
@@ -270,9 +270,9 @@ export async function doctorCommand() {
       passedCount++;
     } else {
       apiServerSpinner.fail(chalk.red(`Claude API server not responding`));
-      console.log(chalk.gray(`  → Run "claude-phone api-server" on your Mac\n`));
+      console.log(chalk.gray(`  → Run "claude-phone api-server" on your API server\n`));
     }
-    checks.push({ name: 'Claude API server (Mac)', passed: apiHealth.healthy });
+    checks.push({ name: 'Claude API server (remote)', passed: apiHealth.healthy });
 
     // Check drachtio port availability
     const drachtioPort = config.deployment.pi.drachtioPort || 5060;

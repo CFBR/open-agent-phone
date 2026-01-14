@@ -26,17 +26,17 @@ export async function statusCommand() {
   // Claude API Server
   console.log(chalk.bold('Claude API Server:'));
   if (isPiSplit) {
-    // Pi-split mode: Check remote Mac server
+    // Pi-split mode: Check remote API server
     const apiUrl = `http://${config.deployment.pi.macIp}:${config.server.claudeApiPort}`;
     const apiHealth = await checkClaudeApiServer(apiUrl);
 
     if (apiHealth.healthy) {
-      console.log(chalk.green(`  ✓ Connected to Mac (${config.deployment.pi.macIp}:${config.server.claudeApiPort})`));
+      console.log(chalk.green(`  ✓ Connected to API server (${config.deployment.pi.macIp}:${config.server.claudeApiPort})`));
       console.log(chalk.gray('    Remote API server is healthy'));
     } else {
-      console.log(chalk.red(`  ✗ Cannot reach Mac API server`));
+      console.log(chalk.red(`  ✗ Cannot reach API server`));
       console.log(chalk.gray(`    Tried: ${apiUrl}`));
-      console.log(chalk.gray('    Run "claude-phone api-server" on your Mac'));
+      console.log(chalk.gray('    Run "claude-phone api-server" on your API server'));
     }
   } else {
     // Standard mode: Check local server
@@ -77,7 +77,7 @@ export async function statusCommand() {
   if (isPiSplit) {
     console.log(chalk.gray(`  Deployment Mode: Pi Split`));
     console.log(chalk.gray(`  Pi IP: ${config.server.externalIp}`));
-    console.log(chalk.gray(`  Mac IP: ${config.deployment.pi.macIp}`));
+    console.log(chalk.gray(`  API Server IP: ${config.deployment.pi.macIp}`));
     console.log(chalk.gray(`  Drachtio Port: ${config.deployment.pi.drachtioPort}`));
     if (config.deployment.pi.has3cxSbc) {
       console.log(chalk.yellow('  3CX SBC detected (using port 5080)'));

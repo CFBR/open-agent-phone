@@ -172,7 +172,7 @@ export function generateEnvFile(config) {
   // Determine Claude API URL based on deployment mode
   let claudeApiUrl;
   if (config.deployment && config.deployment.mode === 'pi-split' && config.deployment.pi && config.deployment.pi.macIp) {
-    // Pi mode: point to Mac's API server
+    // Pi mode: point to remote API server
     claudeApiUrl = `http://${config.deployment.pi.macIp}:${config.server.claudeApiPort}`;
   } else {
     // Standard mode: local API server

@@ -49,21 +49,21 @@ async function query(prompt, options = {}) {
     return response.data.response;
 
   } catch (error) {
-    // AC26: Mac unreachable during call - don't crash, return helpful message
+    // AC26: API server unreachable during call - don't crash, return helpful message
     if (error.code === 'ECONNREFUSED' || error.code === 'EHOSTUNREACH' || error.code === 'ENETUNREACH') {
       console.warn(`[${timestamp}] CLAUDE API server unreachable (${error.code})`);
-      return "I'm having trouble connecting to my brain right now. The Mac server may be offline or unreachable. Please try again later.";
+      return "I'm having trouble connecting to my brain right now. The API server may be offline or unreachable. Please try again later.";
     }
 
     // AC27: Timeout with helpful error message
     if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
       console.error(`[${timestamp}] CLAUDE Timeout after ${timeout} seconds`);
-      return "I'm sorry, that request took too long. This might mean the Mac server is slow or there's a network issue. Try asking something simpler, or check that claude-phone api-server is running on your Mac.";
+      return "I'm sorry, that request took too long. This might mean the API server is slow or there's a network issue. Try asking something simpler, or check that claude-phone api-server is running.";
     }
 
     console.error(`[${timestamp}] CLAUDE Error:`, error.message);
     // AC26: Don't crash on unknown errors, return friendly message
-    return "I encountered an unexpected error. Please check the Mac is running claude-phone api-server and is on the same network.";
+    return "I encountered an unexpected error. Please check that the API server is running claude-phone api-server and is on the same network.";
   }
 }
 

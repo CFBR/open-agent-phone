@@ -2,7 +2,7 @@
  * Claude HTTP API Server
  *
  * HTTP server that wraps Claude Code CLI with session management
- * Runs on Chuck's Mac Studio to handle voice interface queries
+ * Runs on the API server to handle voice interface queries
  *
  * Usage:
  *   node server.js

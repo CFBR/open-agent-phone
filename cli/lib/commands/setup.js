@@ -78,7 +78,7 @@ export async function setupCommand() {
 }
 
 /**
- * Standard setup flow (Mac/Linux non-Pi)
+ * Standard setup flow (non-Pi)
  * @param {object} config - Current config
  * @returns {Promise<void>}
  */
@@ -137,11 +137,11 @@ async function setupStandard(config) {
  */
 async function setupPi(config) {
   console.log(chalk.bold.yellow('\n🥧 Raspberry Pi Split-Mode Setup\n'));
-  console.log(chalk.gray('In this mode, the Pi runs voice-app (Docker) and your Mac runs claude-api-server.\n'));
+  console.log(chalk.gray('In this mode, the Pi runs voice-app (Docker) and your API server runs claude-api-server.\n'));
 
-  // AC23: Handle existing Mac config migration
+  // AC23: Handle existing standard config migration
   if (config.deployment && config.deployment.mode === 'standard') {
-    console.log(chalk.yellow('\n⚠️  Detected existing Mac configuration'));
+    console.log(chalk.yellow('\n⚠️  Detected existing standard configuration'));
     console.log(chalk.gray('Your config will be migrated to Pi split-mode while preserving:'));
     console.log(chalk.gray('  • API keys (ElevenLabs, OpenAI)'));
     console.log(chalk.gray('  • Device configurations'));
@@ -246,17 +246,17 @@ async function setupPi(config) {
   config.deployment.pi.has3cxSbc = has3cxSbc;
   config.deployment.pi.drachtioPort = has3cxSbc ? 5070 : 5060;
 
-  // Ask for Mac IP (separate prompts to avoid inquirer issues)
-  console.log(chalk.gray('[DEBUG] Starting Mac IP prompt...'));
+  // Ask for API server IP (separate prompts to avoid inquirer issues)
+  console.log(chalk.gray('[DEBUG] Starting API server IP prompt...'));
   const { macIp } = await inquirer.prompt([
     {
       type: 'input',
       name: 'macIp',
-      message: 'Mac IP address (where claude-api-server runs):',
+      message: 'API server IP address (where claude-api-server runs):',
       default: config.deployment.pi.macIp || '',
       validate: (input) => {
         if (!input || input.trim() === '') {
-          return 'Mac IP is required';
+          return 'API server IP is required';
         }
         if (!validateIP(input)) {
           return 'Invalid IP address format';
@@ -265,15 +265,15 @@ async function setupPi(config) {
       }
     }
   ]);
-  console.log(chalk.gray('[DEBUG] Mac IP entered:', macIp));
+  console.log(chalk.gray('[DEBUG] API server IP entered:', macIp));
 
   // Check reachability after prompt (not inside validate - ora conflicts with inquirer)
-  const reachSpinner = ora('Checking Mac reachability...').start();
+  const reachSpinner = ora('Checking API server reachability...').start();
   const reachable = await isReachable(macIp);
   if (reachable) {
-    reachSpinner.succeed(`Mac ${macIp} is reachable`);
+    reachSpinner.succeed(`API server ${macIp} is reachable`);
   } else {
-    reachSpinner.warn(`Cannot reach ${macIp} - make sure Mac is on same network`);
+    reachSpinner.warn(`Cannot reach ${macIp} - make sure API server is on same network`);
   }
 
   console.log(chalk.gray('[DEBUG] Starting port prompt...'));
@@ -281,7 +281,7 @@ async function setupPi(config) {
     {
       type: 'input',
       name: 'claudeApiPort',
-      message: 'Claude API server port (on Mac):',
+      message: 'Claude API server port (on API server):',
       default: String(config.server?.claudeApiPort || 3333),
       validate: (input) => {
         const port = parseInt(input, 10);
@@ -313,7 +313,7 @@ async function setupPi(config) {
     apiHealthSpinner.succeed(`Claude API server is healthy at ${apiUrl}`);
   } else {
     apiHealthSpinner.warn(`Claude API server not responding at ${apiUrl}`);
-    console.log(chalk.yellow('  ⚠️  Make sure to run "claude-phone api-server" on your Mac\n'));
+    console.log(chalk.yellow('  ⚠️  Make sure to run "claude-phone api-server" on your API server\n'));
   }
 
   // Step 1: API Keys (only for voice services - TTS/STT)
@@ -344,8 +344,8 @@ async function setupPi(config) {
 
   // Summary
   console.log(chalk.bold.green('\n✓ Pi Setup complete!\n'));
-  console.log(chalk.bold.cyan('📋 Mac-side instructions:\n'));
-  console.log(chalk.gray('  On your Mac, run:'));
+  console.log(chalk.bold.cyan('📋 API server instructions:\n'));
+  console.log(chalk.gray('  On your API server, run:'));
   console.log(chalk.white(`    claude-phone api-server --port ${config.server.claudeApiPort}\n`));
   console.log(chalk.gray('  This starts the Claude API wrapper that the Pi will connect to.\n'));
   console.log(chalk.bold.cyan('📋 Pi-side next steps:\n'));
@@ -489,7 +489,7 @@ async function setupAPIKeys(config) {
 }
 
 /**
- * Setup SIP configuration (standard/Mac mode)
+ * Setup SIP configuration (standard mode)
  * @param {object} config - Current config
  * @returns {Promise<object>} Updated config
  */

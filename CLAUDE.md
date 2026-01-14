@@ -43,7 +43,7 @@ Claude Phone gives your Claude Code installation a phone number through 3CX PBX 
 │                       │ HTTP                                │
 │                       ↓                                      │
 │  ┌─────────────────────────────────────────────────┐       │
-│  │   claude-api-server (runs on Mac with Claude)   │       │
+│  │   claude-api-server (runs on API server with Claude)   │       │
 │  │   Wraps Claude Code CLI with session management │       │
 │  └─────────────────────────────────────────────────┘       │
 └─────────────────────────────────────────────────────────────┘
@@ -55,7 +55,7 @@ Claude Phone gives your Claude Code installation a phone number through 3CX PBX 
 claude-phone/
 ├── CLAUDE.md                 # This file
 ├── README.md                 # User-facing documentation
-├── install.sh                # One-command installer for Mac
+├── install.sh                # One-command installer
 ├── package.json              # Root package (hooks, linting)
 ├── eslint.config.js          # ESLint configuration
 ├── docker-compose.yml        # Multi-container orchestration
@@ -140,7 +140,7 @@ docker compose up -d
 # View logs
 docker compose logs -f voice-app
 
-# Start claude-api-server (on Mac with Claude Code)
+# Start claude-api-server (on API server with Claude Code)
 cd claude-api-server && node server.js
 
 # Test outbound call
@@ -287,7 +287,7 @@ Critical variables (see `.env.example`):
   - [x] `claude-phone config show/path/reset` - Configuration management
   - [x] `claude-phone backup/restore` - Configuration backup/restore
   - [x] `claude-phone uninstall` - Clean removal
-  - [x] One-line install script (Mac + Linux)
+  - [x] One-line install script (macOS + Linux)
   - [x] API key validation (ElevenLabs, OpenAI)
   - [x] Process management with PID files
   - [x] Docker compose wrapper
@@ -297,7 +297,7 @@ Critical variables (see `.env.example`):
 1. **ES5-style CommonJS** - Compatibility with drachtio ecosystem (voice-app, claude-api-server)
 2. **ES Modules for CLI** - Modern Node.js for CLI tool (separate from voice-app)
 3. **Host networking mode** - Required for FreeSWITCH RTP to reach 3CX
-4. **Separate claude-api-server** - Runs on Mac with Claude Code CLI (needs Claude Max subscription)
+4. **Separate claude-api-server** - Runs on a server with Claude Code CLI (needs Claude Max subscription)
 5. **Session-per-call** - Each call gets a Claude session for multi-turn context
 6. **VAD + DTMF #** - Dual input methods (voice activity detection + manual send)
 7. **Config in ~/.claude-phone** - User config separate from codebase (chmod 600 for secrets)
@@ -321,17 +321,17 @@ None documented yet. This is the initial commit.
 
 **Raspberry Pi Deployment:** ✅ COMPLETE (PR #9)
 - [x] `claude-phone setup` detects Pi and enters split-mode setup
-- [x] `claude-phone api-server` command for Mac-side server
+- [x] `claude-phone api-server` command for API server
 - [x] 3CX SBC detection (auto-configures port 5070 if detected)
-- [x] Mac IP validation with reachability checks
-- [x] Enhanced `status` and `doctor` for Pi ↔ Mac connectivity
-- [x] Graceful error handling when Mac unreachable during calls
+- [x] API server IP validation with reachability checks
+- [x] Enhanced `status` and `doctor` for Pi ↔ API server connectivity
+- [x] Graceful error handling when API server unreachable during calls
 
 **SBC Simplified Installer:** ✅ COMPLETE
 - [x] Pi mode uses simplified `setupSBC()` (single FQDN question)
 - [x] Removed confusing "registrar IP" question from Pi setup
 - [x] SBC-everywhere model works for both cloud and on-prem 3CX
-- [x] Mac standard mode unchanged (backward compatible)
+- [x] Standard mode unchanged (backward compatible)
 
 **Other:**
 - [ ] Webhook notifications for call events

@@ -44,22 +44,22 @@ export async function startCommand() {
     process.exit(1);
   }
 
-  // Check Claude CLI only in standard mode (Pi mode connects to Mac instead)
+  // Check Claude CLI only in standard mode (Pi mode connects to API server instead)
   if (!isPiMode && !(await isClaudeInstalled())) {
     console.log(chalk.yellow('⚠️  Claude CLI not found'));
     console.log(chalk.gray('  Install from: https://claude.com/download\n'));
   }
 
-  // In Pi mode, verify Mac API server is reachable
+  // In Pi mode, verify API server is reachable
   if (isPiMode) {
-    const macApiUrl = `http://${config.deployment.pi.macIp}:${config.server.claudeApiPort}`;
-    const macSpinner = ora(`Checking Mac API server at ${macApiUrl}...`).start();
-    const apiHealth = await checkClaudeApiServer(macApiUrl);
+    const apiServerUrl = `http://${config.deployment.pi.macIp}:${config.server.claudeApiPort}`;
+    const apiSpinner = ora(`Checking API server at ${apiServerUrl}...`).start();
+    const apiHealth = await checkClaudeApiServer(apiServerUrl);
     if (apiHealth.healthy) {
-      macSpinner.succeed(`Mac API server is healthy at ${macApiUrl}`);
+      apiSpinner.succeed(`API server is healthy at ${apiServerUrl}`);
     } else {
-      macSpinner.warn(`Mac API server not responding at ${macApiUrl}`);
-      console.log(chalk.yellow('  ⚠️  Make sure "claude-phone api-server" is running on your Mac\n'));
+      apiSpinner.warn(`API server not responding at ${apiServerUrl}`);
+      console.log(chalk.yellow('  ⚠️  Make sure "claude-phone api-server" is running on your API server\n'));
     }
   }
 
@@ -120,7 +120,7 @@ export async function startCommand() {
   await sleep(3000);
   spinner.succeed('Containers initialized');
 
-  // Start claude-api-server (only in standard mode - Pi mode uses Mac)
+  // Start claude-api-server (only in standard mode - Pi mode uses remote API server)
   if (!isPiMode) {
     spinner.start('Starting Claude API server...');
     try {
@@ -141,7 +141,7 @@ export async function startCommand() {
   console.log(chalk.gray('Services:'));
   console.log(chalk.gray(`  • Docker containers: drachtio, freeswitch, voice-app`));
   if (isPiMode) {
-    console.log(chalk.gray(`  • Mac API server: http://${config.deployment.pi.macIp}:${config.server.claudeApiPort}`));
+    console.log(chalk.gray(`  • API server: http://${config.deployment.pi.macIp}:${config.server.claudeApiPort}`));
   } else {
     console.log(chalk.gray(`  • Claude API server: http://localhost:${config.server.claudeApiPort}`));
   }

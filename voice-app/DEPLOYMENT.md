@@ -148,7 +148,7 @@ Look for:
 
 ### Step 7: Test the API
 
-From your Mac (or another machine on the network):
+From another machine on the network:
 
 ```bash
 # Health check
@@ -303,7 +303,7 @@ curl -X POST http://10.70.7.81:3000/api/outbound-call \
         └── outbound-routes.js     # NEW
 ```
 
-### On Local Mac
+### On Local Machine
 ```
 /Users/networkchuck/secondbrain/mac_studio/1 - Projects/508.../packages/voice-app/
 ├── lib/

@@ -89,7 +89,7 @@ program
 
 program
   .command('api-server')
-  .description('Start Claude API server for Pi remote connections (Mac only)')
+  .description('Start Claude API server for Pi remote connections')
   .option('-p, --port <port>', 'Port to listen on', '3333')
   .action(async (options) => {
     try {

@@ -23,20 +23,20 @@ Claude Phone gives your Claude Code installation a phone number. You can:
 │         ↓                                                    │
 │  ┌─────────────┐    ┌─────────────┐                        │
 │  │  voice-app  │ ←→ │ Claude API  │                        │
-│  │  (Docker)   │    │  (Mac/PC)   │                        │
+│  │  (Docker)   │    │ (API Server)│                        │
 │  └─────────────┘    └─────────────┘                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 **Components:**
 - `voice-app/` - Docker container with drachtio + FreeSWITCH + Node.js orchestrator
-- `claude-api-server/` - HTTP wrapper for Claude Code CLI (runs on your Mac/PC with Claude Max)
+- `claude-api-server/` - HTTP wrapper for Claude Code CLI (runs on your API server with Claude Max)
 
 ## Requirements
 
 - 3CX phone system (free tier works!)
 - Docker host for voice-app
-- Mac or PC with Claude Code CLI installed (uses Claude Max subscription)
+- Server or PC with Claude Code CLI installed (uses Claude Max subscription)
 - ElevenLabs API key (for TTS)
 - OpenAI API key (for Whisper STT)
 
@@ -55,7 +55,7 @@ claude-phone setup    # Interactive configuration wizard
 claude-phone start    # Launch all services
 ```
 
-### Raspberry Pi + Mac Setup
+### Raspberry Pi + API Server Setup
 
 For Raspberry Pi deployments (recommended for most users):
 
@@ -63,9 +63,9 @@ For Raspberry Pi deployments (recommended for most users):
    - 3CX FQDN (e.g., `mycompany.3cx.us`)
    - API keys (ElevenLabs, OpenAI)
    - Device config (extension, voice, prompt)
-   - Mac IP address
+   - API server IP address
 
-2. **On Mac:** Run `claude-phone api-server` to start the Claude wrapper
+2. **On API server:** Run `claude-phone api-server` to start the Claude wrapper
 
 3. **On Pi:** Run `claude-phone start` to launch voice services
 
@@ -97,7 +97,7 @@ cp voice-app/config/devices.json.example voice-app/config/devices.json
 
 #### 4. Start the Claude API server
 
-On your Mac with Claude Code:
+On your API server with Claude Code:
 
 ```bash
 cd claude-api-server
