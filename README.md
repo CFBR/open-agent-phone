@@ -42,28 +42,60 @@ Claude Phone gives your Claude Code installation a phone number. You can:
 
 ## Quick Start
 
-### 1. Clone the repo
+### One-Line Install (Recommended)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/networkchuck/claude-phone/main/install.sh | bash
+```
+
+Then run:
+
+```bash
+claude-phone setup    # Interactive configuration wizard
+claude-phone start    # Launch all services
+```
+
+### Raspberry Pi + Mac Setup
+
+For Raspberry Pi deployments (recommended for most users):
+
+1. **On Pi:** Run `claude-phone setup` - it auto-detects Pi and asks for:
+   - 3CX FQDN (e.g., `mycompany.3cx.us`)
+   - API keys (ElevenLabs, OpenAI)
+   - Device config (extension, voice, prompt)
+   - Mac IP address
+
+2. **On Mac:** Run `claude-phone api-server` to start the Claude wrapper
+
+3. **On Pi:** Run `claude-phone start` to launch voice services
+
+### Manual Setup (Advanced)
+
+<details>
+<summary>Click to expand manual setup instructions</summary>
+
+#### 1. Clone the repo
 
 ```bash
 git clone https://github.com/theNetworkChuck/claude-phone.git
 cd claude-phone
 ```
 
-### 2. Configure environment
+#### 2. Configure environment
 
 ```bash
 cp .env.example .env
 # Edit .env with your values
 ```
 
-### 3. Configure devices
+#### 3. Configure devices
 
 ```bash
 cp voice-app/config/devices.json.example voice-app/config/devices.json
 # Edit devices.json with your 3CX extensions and ElevenLabs voices
 ```
 
-### 4. Start the Claude API server
+#### 4. Start the Claude API server
 
 On your Mac with Claude Code:
 
@@ -73,7 +105,7 @@ npm install
 node server.js
 ```
 
-### 5. Start voice-app
+#### 5. Start voice-app
 
 On your Docker host:
 
@@ -81,11 +113,13 @@ On your Docker host:
 docker compose up -d
 ```
 
-### 6. Configure 3CX
+#### 6. Configure 3CX
 
 1. Create extensions for each device (e.g., 9000, 9002)
 2. Note the Auth ID and password for each extension
 3. Add them to your `devices.json`
+
+</details>
 
 ## API Endpoints
 

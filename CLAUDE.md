@@ -263,8 +263,8 @@ Critical variables (see `.env.example`):
 | `CLAUDE_API_URL` | URL to claude-api-server |
 | `ELEVENLABS_API_KEY` | TTS API key |
 | `OPENAI_API_KEY` | Whisper STT API key |
-| `SIP_DOMAIN` | 3CX server hostname |
-| `SIP_REGISTRAR` | 3CX SIP registrar IP |
+| `SIP_DOMAIN` | 3CX server FQDN |
+| `SIP_REGISTRAR` | 3CX SIP registrar (same as domain for SBC mode) |
 
 ## Current Phase
 
@@ -326,6 +326,12 @@ None documented yet. This is the initial commit.
 - [x] Mac IP validation with reachability checks
 - [x] Enhanced `status` and `doctor` for Pi ↔ Mac connectivity
 - [x] Graceful error handling when Mac unreachable during calls
+
+**SBC Simplified Installer:** ✅ COMPLETE
+- [x] Pi mode uses simplified `setupSBC()` (single FQDN question)
+- [x] Removed confusing "registrar IP" question from Pi setup
+- [x] SBC-everywhere model works for both cloud and on-prem 3CX
+- [x] Mac standard mode unchanged (backward compatible)
 
 **Other:**
 - [ ] Webhook notifications for call events
