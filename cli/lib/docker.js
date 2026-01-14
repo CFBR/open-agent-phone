@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import crypto from 'crypto';
 import fs from 'fs';
 import {
@@ -6,6 +6,28 @@ import {
   getEnvPath,
   getConfigDir
 } from './config.js';
+
+/**
+ * Detect which docker compose command to use
+ * Some systems have 'docker compose' (plugin), others have 'docker-compose' (standalone)
+ * @returns {{cmd: string, args: string[]}} Command and base args for compose
+ */
+function getComposeCommand() {
+  // Try 'docker compose' (plugin) first
+  try {
+    execSync('docker compose version', { stdio: 'pipe' });
+    return { cmd: 'docker', args: ['compose'] };
+  } catch (e) {
+    // Fall back to standalone docker-compose
+    try {
+      execSync('docker-compose --version', { stdio: 'pipe' });
+      return { cmd: 'docker-compose', args: [] };
+    } catch (e2) {
+      // Default to plugin style, let it fail with helpful error
+      return { cmd: 'docker', args: ['compose'] };
+    }
+  }
+}
 
 /**
  * Generate a random secret for Docker services
@@ -241,8 +263,11 @@ export async function startContainers() {
     throw new Error('Docker configuration not found. Run "claude-phone setup" first.');
   }
 
+  const compose = getComposeCommand();
+  const composeArgs = [...compose.args, '-f', dockerComposePath, 'up', '-d'];
+
   return new Promise((resolve, reject) => {
-    const child = spawn('docker', ['compose', '-f', dockerComposePath, 'up', '-d'], {
+    const child = spawn(compose.cmd, composeArgs, {
       cwd: configDir,
       stdio: 'pipe'
     });
@@ -292,8 +317,11 @@ export async function stopContainers() {
     return;
   }
 
+  const compose = getComposeCommand();
+  const composeArgs = [...compose.args, '-f', dockerComposePath, 'down'];
+
   return new Promise((resolve, reject) => {
-    const child = spawn('docker', ['compose', '-f', dockerComposePath, 'down'], {
+    const child = spawn(compose.cmd, composeArgs, {
       cwd: configDir,
       stdio: 'pipe'
     });
@@ -328,8 +356,11 @@ export async function getContainerStatus() {
     return [];
   }
 
+  const compose = getComposeCommand();
+  const composeArgs = [...compose.args, '-f', dockerComposePath, 'ps', '--format', 'json'];
+
   return new Promise((resolve) => {
-    const child = spawn('docker', ['compose', '-f', dockerComposePath, 'ps', '--format', 'json'], {
+    const child = spawn(compose.cmd, composeArgs, {
       stdio: 'pipe'
     });
 
