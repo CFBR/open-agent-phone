@@ -4,10 +4,11 @@ import http from 'http';
 /**
  * Check if an IP address is reachable on the network
  * @param {string} ip - IP address to check
+ * @param {number} [port=3333] - Port to check (defaults to API server port)
  * @param {number} [timeout=3000] - Timeout in milliseconds
  * @returns {Promise<boolean>} True if IP is reachable
  */
-export async function isReachable(ip, timeout = 3000) {
+export async function isReachable(ip, port = 3333, timeout = 3000) {
   return new Promise((resolve) => {
     // Validate IP format first
     const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$/;
@@ -44,10 +45,8 @@ export async function isReachable(ip, timeout = 3000) {
       }
     });
 
-    // Try to connect to a common port (doesn't matter if nothing is listening)
-    // We just want to know if the IP is reachable on the network
-    // Port 80 is commonly used and not filtered by firewalls
-    socket.connect(80, ip);
+    // Connect to the specified port (default 3333 for API server)
+    socket.connect(port, ip);
   });
 }
 

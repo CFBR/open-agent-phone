@@ -581,13 +581,14 @@ async function setupPi(config) {
   ]);
   console.log(chalk.gray('[DEBUG] API server IP entered:', macIp));
 
-  // Check reachability after prompt (not inside validate - ora conflicts with inquirer)
-  const reachSpinner = ora('Checking API server reachability...').start();
-  const reachable = await isReachable(macIp);
+  // Check reachability on API server port (default 3333)
+  const defaultPort = config.server?.claudeApiPort || 3333;
+  const reachSpinner = ora(`Checking API server reachability on port ${defaultPort}...`).start();
+  const reachable = await isReachable(macIp, defaultPort);
   if (reachable) {
-    reachSpinner.succeed(`API server ${macIp} is reachable`);
+    reachSpinner.succeed(`API server ${macIp}:${defaultPort} is reachable`);
   } else {
-    reachSpinner.warn(`Cannot reach ${macIp} - make sure API server is on same network`);
+    reachSpinner.warn(`Cannot reach ${macIp}:${defaultPort} - make sure API server is running and port is open`);
   }
 
   console.log(chalk.gray('[DEBUG] Starting port prompt...'));
