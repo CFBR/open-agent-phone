@@ -343,6 +343,15 @@ None documented yet. This is the initial commit.
 - [x] `--skip-prereqs` flag for advanced users
 - [x] Offline mode graceful degradation
 
+**Installation Type Selector:** ✅ COMPLETE
+- [x] Type prompt: Voice Server, API Server, or Both
+- [x] Voice Server: SIP config, remote API server, API keys, devices
+- [x] API Server: Minimal setup, only port configuration
+- [x] Both: Full stack on one machine (default, backward compatible)
+- [x] Type-specific prereq checks (API Server skips Docker)
+- [x] Start/stop/status/doctor commands respect installation type
+- [x] Re-running setup shows current type as default
+
 **Other:**
 - [ ] Webhook notifications for call events
 - [ ] Call recording and transcripts
