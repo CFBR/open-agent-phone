@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { spawn } from 'child_process';
 import axios from 'axios';
-import { loadConfig, configExists } from '../config.js';
+import { loadConfig, configExists, getInstallationType } from '../config.js';
 import { checkDocker, getContainerStatus } from '../docker.js';
 import { isServerRunning, getServerPid } from '../process-manager.js';
 import { validateElevenLabsKey, validateOpenAIKey } from '../validators.js';
@@ -178,25 +178,59 @@ export async function doctorCommand() {
   }
 
   const config = await loadConfig();
+  const installationType = getInstallationType(config);
+  const isPiSplit = config.deployment && config.deployment.mode === 'pi-split';
+
+  console.log(chalk.bold(`Installation Type: ${installationType === 'api-server' ? 'API Server' : installationType === 'voice-server' ? 'Voice Server' : 'Both (all-in-one)'}\n`));
+
   const checks = [];
   let passedCount = 0;
 
-  // Check deployment mode
-  const isPiSplit = config.deployment && config.deployment.mode === 'pi-split';
-
-  // Check 1: Docker
-  const dockerSpinner = ora('Checking Docker...').start();
-  const dockerResult = await checkDocker();
-  if (dockerResult.installed && dockerResult.running) {
-    dockerSpinner.succeed(chalk.green('Docker is running'));
-    passedCount++;
+  // Run type-appropriate checks
+  if (installationType === 'api-server') {
+    const result = await runApiServerChecks(config);
+    checks.push(...result.checks);
+    passedCount += result.passedCount;
+  } else if (installationType === 'voice-server') {
+    const result = await runVoiceServerChecks(config, isPiSplit);
+    checks.push(...result.checks);
+    passedCount += result.passedCount;
   } else {
-    dockerSpinner.fail(chalk.red(`Docker check failed: ${dockerResult.error}`));
-    console.log(chalk.gray('  → Install Docker Desktop from https://www.docker.com/products/docker-desktop\n'));
-  }
-  checks.push({ name: 'Docker', passed: dockerResult.installed && dockerResult.running });
+    // Both - run all checks
+    const apiResult = await runApiServerChecks(config);
+    checks.push(...apiResult.checks);
+    passedCount += apiResult.passedCount;
 
-  // Check 2: Claude CLI
+    const voiceResult = await runVoiceServerChecks(config, isPiSplit);
+    checks.push(...voiceResult.checks);
+    passedCount += voiceResult.passedCount;
+  }
+
+  // Summary
+  console.log(chalk.bold(`\n${passedCount}/${checks.length} checks passed\n`));
+
+  if (passedCount === checks.length) {
+    console.log(chalk.green('✓ All systems operational!\n'));
+    process.exit(0);
+  } else if (passedCount > checks.length / 2) {
+    console.log(chalk.yellow('⚠ Some issues detected. Review the failures above.\n'));
+    process.exit(1);
+  } else {
+    console.log(chalk.red('✗ Multiple failures detected. Fix the issues above before using Claude Phone.\n'));
+    process.exit(1);
+  }
+}
+
+/**
+ * Run API server health checks
+ * @param {object} config - Configuration
+ * @returns {Promise<{checks: Array, passedCount: number}>}
+ */
+async function runApiServerChecks(config) {
+  const checks = [];
+  let passedCount = 0;
+
+  // Check Claude CLI
   const claudeSpinner = ora('Checking Claude CLI...').start();
   const claudeResult = await checkClaudeCLI();
   if (claudeResult.installed) {
@@ -208,31 +242,76 @@ export async function doctorCommand() {
   }
   checks.push({ name: 'Claude CLI', passed: claudeResult.installed });
 
-  // Check 3: ElevenLabs API
-  const elevenLabsSpinner = ora('Checking ElevenLabs API...').start();
-  const elevenLabsResult = await checkElevenLabsAPI(config.api.elevenlabs.apiKey);
-  if (elevenLabsResult.connected) {
-    elevenLabsSpinner.succeed(chalk.green('ElevenLabs API connected'));
+  // Check local Claude API server
+  const apiServerSpinner = ora('Checking Claude API server...').start();
+  const apiServerResult = await checkClaudeAPIServer(config.server.claudeApiPort);
+  if (apiServerResult.running && apiServerResult.healthy) {
+    apiServerSpinner.succeed(chalk.green(`Claude API server running (PID: ${apiServerResult.pid})`));
+    passedCount++;
+  } else if (apiServerResult.running && !apiServerResult.healthy) {
+    apiServerSpinner.warn(chalk.yellow(`Claude API server running but unhealthy (PID: ${apiServerResult.pid})`));
+    console.log(chalk.gray(`  → ${apiServerResult.error}\n`));
+    passedCount++; // Count as partial pass
+  } else {
+    apiServerSpinner.fail(chalk.red(`Claude API server not running: ${apiServerResult.error}`));
+    console.log(chalk.gray('  → Run "claude-phone start" to launch services\n'));
+  }
+  checks.push({ name: 'Claude API server', passed: apiServerResult.running });
+
+  return { checks, passedCount };
+}
+
+/**
+ * Run voice server health checks
+ * @param {object} config - Configuration
+ * @param {boolean} isPiSplit - Is Pi split mode
+ * @returns {Promise<{checks: Array, passedCount: number}>}
+ */
+async function runVoiceServerChecks(config, isPiSplit) {
+  const checks = [];
+  let passedCount = 0;
+
+  // Check Docker
+  const dockerSpinner = ora('Checking Docker...').start();
+  const dockerResult = await checkDocker();
+  if (dockerResult.installed && dockerResult.running) {
+    dockerSpinner.succeed(chalk.green('Docker is running'));
     passedCount++;
   } else {
-    elevenLabsSpinner.fail(chalk.red(`ElevenLabs API failed: ${elevenLabsResult.error}`));
-    console.log(chalk.gray('  → Check your API key in ~/.claude-phone/config.json\n'));
+    dockerSpinner.fail(chalk.red(`Docker check failed: ${dockerResult.error}`));
+    console.log(chalk.gray('  → Install Docker Desktop from https://www.docker.com/products/docker-desktop\n'));
   }
-  checks.push({ name: 'ElevenLabs API', passed: elevenLabsResult.connected });
+  checks.push({ name: 'Docker', passed: dockerResult.installed && dockerResult.running });
 
-  // Check 4: OpenAI API
-  const openAISpinner = ora('Checking OpenAI API...').start();
-  const openAIResult = await checkOpenAIAPI(config.api.openai.apiKey);
-  if (openAIResult.connected) {
-    openAISpinner.succeed(chalk.green('OpenAI API connected'));
-    passedCount++;
-  } else {
-    openAISpinner.fail(chalk.red(`OpenAI API failed: ${openAIResult.error}`));
-    console.log(chalk.gray('  → Check your API key in ~/.claude-phone/config.json\n'));
+  // Check ElevenLabs API (only if configured)
+  if (config.api && config.api.elevenlabs && config.api.elevenlabs.apiKey) {
+    const elevenLabsSpinner = ora('Checking ElevenLabs API...').start();
+    const elevenLabsResult = await checkElevenLabsAPI(config.api.elevenlabs.apiKey);
+    if (elevenLabsResult.connected) {
+      elevenLabsSpinner.succeed(chalk.green('ElevenLabs API connected'));
+      passedCount++;
+    } else {
+      elevenLabsSpinner.fail(chalk.red(`ElevenLabs API failed: ${elevenLabsResult.error}`));
+      console.log(chalk.gray('  → Check your API key in ~/.claude-phone/config.json\n'));
+    }
+    checks.push({ name: 'ElevenLabs API', passed: elevenLabsResult.connected });
   }
-  checks.push({ name: 'OpenAI API', passed: openAIResult.connected });
 
-  // Check 5: Voice-app container
+  // Check OpenAI API (only if configured)
+  if (config.api && config.api.openai && config.api.openai.apiKey) {
+    const openAISpinner = ora('Checking OpenAI API...').start();
+    const openAIResult = await checkOpenAIAPI(config.api.openai.apiKey);
+    if (openAIResult.connected) {
+      openAISpinner.succeed(chalk.green('OpenAI API connected'));
+      passedCount++;
+    } else {
+      openAISpinner.fail(chalk.red(`OpenAI API failed: ${openAIResult.error}`));
+      console.log(chalk.gray('  → Check your API key in ~/.claude-phone/config.json\n'));
+    }
+    checks.push({ name: 'OpenAI API', passed: openAIResult.connected });
+  }
+
+  // Check Voice-app container
   const voiceAppSpinner = ora('Checking voice-app container...').start();
   const voiceAppResult = await checkVoiceApp();
   if (voiceAppResult.running) {
@@ -244,7 +323,7 @@ export async function doctorCommand() {
   }
   checks.push({ name: 'Voice-app container', passed: voiceAppResult.running });
 
-  // Check 6: Claude API server
+  // Check API server reachability (voice-server mode)
   if (isPiSplit) {
     // Pi-split mode: Check API server IP reachability
     const apiIpSpinner = ora('Checking API server IP reachability...').start();
@@ -280,7 +359,7 @@ export async function doctorCommand() {
     const drachtioPortCheck = await checkPort(drachtioPort);
 
     if (drachtioPortCheck.inUse) {
-      if (drachtioPort === 5080) {
+      if (drachtioPort === 5070) {
         drachtioSpinner.succeed(chalk.green(`Port ${drachtioPort} in use (expected - drachtio running)`));
         passedCount++;
       } else {
@@ -292,36 +371,22 @@ export async function doctorCommand() {
       passedCount++;
     }
     checks.push({ name: `Drachtio port ${drachtioPort}`, passed: true });
+  } else if (config.deployment && config.deployment.apiServerIp) {
+    // Voice server mode (non-Pi): Check remote API server
+    const apiServerIp = config.deployment.apiServerIp;
+    const apiServerSpinner = ora('Checking remote API server...').start();
+    const apiUrl = `http://${apiServerIp}:${config.server.claudeApiPort}`;
+    const apiHealth = await checkClaudeApiHealth(apiUrl);
 
-  } else {
-    // Standard mode: Check local Claude API server
-    const apiServerSpinner = ora('Checking Claude API server...').start();
-    const apiServerResult = await checkClaudeAPIServer(config.server.claudeApiPort);
-    if (apiServerResult.running && apiServerResult.healthy) {
-      apiServerSpinner.succeed(chalk.green(`Claude API server running (PID: ${apiServerResult.pid})`));
+    if (apiHealth.healthy) {
+      apiServerSpinner.succeed(chalk.green(`API server healthy at ${apiUrl}`));
       passedCount++;
-    } else if (apiServerResult.running && !apiServerResult.healthy) {
-      apiServerSpinner.warn(chalk.yellow(`Claude API server running but unhealthy (PID: ${apiServerResult.pid})`));
-      console.log(chalk.gray(`  → ${apiServerResult.error}\n`));
-      passedCount++; // Count as partial pass
     } else {
-      apiServerSpinner.fail(chalk.red(`Claude API server not running: ${apiServerResult.error}`));
-      console.log(chalk.gray('  → Run "claude-phone start" to launch services\n'));
+      apiServerSpinner.fail(chalk.red(`API server not responding`));
+      console.log(chalk.gray(`  → Run "claude-phone api-server" on your API server\n`));
     }
-    checks.push({ name: 'Claude API server', passed: apiServerResult.running });
+    checks.push({ name: 'API server (remote)', passed: apiHealth.healthy });
   }
 
-  // Summary
-  console.log(chalk.bold(`\n${passedCount}/${checks.length} checks passed\n`));
-
-  if (passedCount === checks.length) {
-    console.log(chalk.green('✓ All systems operational!\n'));
-    process.exit(0);
-  } else if (passedCount > checks.length / 2) {
-    console.log(chalk.yellow('⚠ Some issues detected. Review the failures above.\n'));
-    process.exit(1);
-  } else {
-    console.log(chalk.red('✗ Multiple failures detected. Fix the issues above before using Claude Phone.\n'));
-    process.exit(1);
-  }
+  return { checks, passedCount };
 }

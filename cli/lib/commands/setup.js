@@ -17,11 +17,43 @@ import {
   validateHostname
 } from '../validators.js';
 import { getLocalIP, getProjectRoot } from '../utils.js';
-import { detectPlatform, isRaspberryPi } from '../platform.js';
-import { checkPort, detect3cxSbc } from '../port-check.js';
+import { isRaspberryPi } from '../platform.js';
+import { detect3cxSbc } from '../port-check.js';
 import { checkPiPrerequisites } from '../prerequisites.js';
 import { isReachable, checkClaudeApiServer } from '../network.js';
 import { runPrereqChecks } from '../prereqs.js';
+
+/**
+ * Prompt for installation type
+ * @param {string} currentType - Current installation type
+ * @returns {Promise<string>} Selected installation type
+ */
+async function promptInstallationType(currentType = 'both') {
+  const { type } = await inquirer.prompt([{
+    type: 'list',
+    name: 'type',
+    message: 'What are you installing?',
+    default: currentType,
+    choices: [
+      {
+        name: 'Voice Server (Pi/Linux) - Handles calls, needs Docker',
+        value: 'voice-server'
+      },
+      {
+        name: 'API Server - Claude Code wrapper, minimal setup',
+        value: 'api-server'
+      },
+      {
+        name: 'Both (all-in-one) - Full stack on one machine',
+        value: 'both'
+      }
+    ]
+  }]);
+
+  console.log(chalk.cyan(`\nYou selected: ${type === 'voice-server' ? 'Voice Server' : type === 'api-server' ? 'API Server' : 'Both (all-in-one)'}\n`));
+
+  return type;
+}
 
 /**
  * Setup command - Interactive wizard for configuration
@@ -31,30 +63,22 @@ import { runPrereqChecks } from '../prereqs.js';
 export async function setupCommand(options = {}) {
   console.log(chalk.bold.cyan('\n🎯 Claude Phone Setup\n'));
 
-  // Run prerequisite checks unless skipped
+  // Run minimal prerequisite check first (Node.js only)
   if (!options.skipPrereqs) {
-    const prereqResult = await runPrereqChecks();
+    const minimalPrereq = await runPrereqChecks({ type: 'minimal' });
 
-    if (!prereqResult.success) {
+    if (!minimalPrereq.success) {
       console.log(chalk.red('\n❌ Prerequisites not met. Please fix the issues above and try again.\n'));
-      console.log(chalk.gray('You can skip prerequisite checks with: claude-phone setup --skip-prereqs\n'));
       process.exit(1);
     }
   } else {
     console.log(chalk.yellow('⚠️  Skipping prerequisite checks (--skip-prereqs flag)\n'));
   }
 
-  // Detect platform
-  const platform = await detectPlatform();
-  const isPi = await isRaspberryPi();
-
-  console.log(chalk.gray(`Platform: ${platform.os} (${platform.arch})`));
-  if (isPi) {
-    console.log(chalk.cyan('🥧 Raspberry Pi detected!\n'));
-  }
-
   // Check if config exists
   const hasConfig = configExists();
+  let existingConfig = null;
+
   if (hasConfig) {
     console.log(chalk.yellow('⚠️  Configuration already exists.'));
     const { shouldContinue } = await inquirer.prompt([
@@ -70,18 +94,43 @@ export async function setupCommand(options = {}) {
       console.log(chalk.gray('Setup cancelled.'));
       return;
     }
+
+    existingConfig = await loadConfig();
   }
 
-  // Load existing config or create new
-  const config = hasConfig ? await loadConfig() : createDefaultConfig();
+  // Prompt for installation type
+  console.log(chalk.bold.cyan('\n📦 Installation Type\n'));
+  const installationType = await promptInstallationType(
+    existingConfig ? existingConfig.installationType : 'both'
+  );
 
-  // Branch based on platform
-  try {
-    if (isPi) {
-      await setupPi(config);
-    } else {
-      await setupStandard(config);
+  // Detect platform (for Pi split-mode detection)
+  const isPi = await isRaspberryPi();
+
+  // If Pi detected and user selected "both", recommend voice-server
+  if (isPi && installationType === 'both') {
+    console.log(chalk.yellow('\n⚠️  Raspberry Pi detected!'));
+    console.log(chalk.gray('For best performance, consider selecting "Voice Server" instead of "Both".'));
+    console.log(chalk.gray('This allows the API server to run on a more powerful machine.\n'));
+
+    const { changeToPi } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'changeToPi',
+        message: 'Switch to Voice Server mode?',
+        default: true
+      }
+    ]);
+
+    if (changeToPi) {
+      // Re-run with voice-server type
+      return setupInstallationType('voice-server', existingConfig, isPi, options);
     }
+  }
+
+  // Run type-specific setup
+  try {
+    await setupInstallationType(installationType, existingConfig, isPi, options);
   } catch (error) {
     console.error(chalk.red('\n\n❌ Setup failed with error:'));
     console.error(chalk.red(error.message));
@@ -89,15 +138,254 @@ export async function setupCommand(options = {}) {
     console.error(chalk.gray(error.stack));
     process.exit(1);
   }
-
 }
 
 /**
- * Standard setup flow (non-Pi)
- * @param {object} config - Current config
+ * Route to type-specific setup
+ * @param {string} installationType - Installation type
+ * @param {object} existingConfig - Existing config or null
+ * @param {boolean} isPi - Is Raspberry Pi
+ * @param {object} options - Command options
  * @returns {Promise<void>}
  */
-async function setupStandard(config) {
+async function setupInstallationType(installationType, existingConfig, isPi, options) {
+  // Load existing config or create default
+  const baseConfig = existingConfig || createDefaultConfig();
+
+  // Run type-specific prereq checks (unless skipped)
+  if (!options.skipPrereqs && installationType !== 'api-server') {
+    console.log(chalk.bold.cyan(`\n🔍 Checking ${installationType === 'voice-server' ? 'Voice Server' : 'All'} prerequisites...\n`));
+    const prereqResult = await runPrereqChecks({ type: installationType });
+
+    if (!prereqResult.success) {
+      console.log(chalk.red('\n❌ Prerequisites not met. Please fix the issues above and try again.\n'));
+      process.exit(1);
+    }
+  }
+
+  let config;
+
+  switch (installationType) {
+    case 'api-server':
+      config = await setupApiServer(baseConfig);
+      break;
+
+    case 'voice-server':
+      // Check if Pi - use Pi setup flow
+      if (isPi) {
+        config = await setupPi(baseConfig);
+      } else {
+        config = await setupVoiceServer(baseConfig);
+      }
+      break;
+
+    case 'both':
+    default:
+      // Check if Pi - use Pi setup but with "both" type
+      if (isPi) {
+        config = await setupPi(baseConfig);
+      } else {
+        config = await setupBoth(baseConfig);
+      }
+      break;
+  }
+
+  // Set installation type in config
+  config.installationType = installationType;
+
+  // Save configuration
+  const spinner = ora('Saving configuration...').start();
+  try {
+    await saveConfig(config);
+    spinner.succeed('Configuration saved');
+  } catch (error) {
+    spinner.fail(`Failed to save configuration: ${error.message}`);
+    throw error;
+  }
+
+  // Type-specific success messages
+  console.log(chalk.bold.green('\n✓ Setup complete!\n'));
+
+  if (installationType === 'api-server') {
+    console.log(chalk.gray('To start the API server:'));
+    console.log(chalk.gray('  claude-phone start\n'));
+    console.log(chalk.gray(`The API server will listen on port ${config.server.claudeApiPort}.`));
+    console.log(chalk.gray('Voice servers can connect to: http://YOUR_IP:' + config.server.claudeApiPort + '\n'));
+  } else if (installationType === 'voice-server') {
+    if (isPi) {
+      console.log(chalk.bold.cyan('📋 API server instructions:\n'));
+      console.log(chalk.gray('  On your API server, run:'));
+      console.log(chalk.white(`    claude-phone api-server --port ${config.server.claudeApiPort}\n`));
+      console.log(chalk.gray('  This starts the Claude API wrapper that the Pi will connect to.\n'));
+      console.log(chalk.bold.cyan('📋 Pi-side next steps:\n'));
+      console.log(chalk.gray('  1. Run "claude-phone start" to launch voice-app'));
+      console.log(chalk.gray('  2. Call extension ' + config.devices[0].extension + ' from your phone'));
+      console.log(chalk.gray('  3. Start talking to Claude!\n'));
+    } else {
+      console.log(chalk.gray('Make sure your API server is running with:'));
+      console.log(chalk.gray('  claude-phone api-server (on the API server machine)\n'));
+      console.log(chalk.gray('Next steps:'));
+      console.log(chalk.gray('  1. Run "claude-phone start" to launch voice services'));
+      console.log(chalk.gray('  2. Call extension ' + config.devices[0].extension + ' from your phone'));
+      console.log(chalk.gray('  3. Start talking to Claude!\n'));
+    }
+  } else {
+    // Both
+    console.log(chalk.gray('Next steps:'));
+    console.log(chalk.gray('  1. Run "claude-phone start" to launch all services'));
+    console.log(chalk.gray('  2. Call extension ' + config.devices[0].extension + ' from your phone'));
+    console.log(chalk.gray('  3. Start talking to Claude!\n'));
+  }
+}
+
+/**
+ * API Server only setup (minimal configuration)
+ * @param {object} config - Current config
+ * @returns {Promise<object>} Updated config
+ */
+async function setupApiServer(config) {
+  console.log(chalk.bold.cyan('\n🖥️  API Server Configuration\n'));
+
+  const answers = await inquirer.prompt([{
+    type: 'input',
+    name: 'port',
+    message: 'API server port:',
+    default: config.server?.claudeApiPort || 3333,
+    validate: (input) => {
+      const port = parseInt(input, 10);
+      if (isNaN(port) || port < 1024 || port > 65535) {
+        return 'Port must be between 1024 and 65535';
+      }
+      return true;
+    }
+  }]);
+
+  return {
+    ...config,
+    server: {
+      ...config.server,
+      claudeApiPort: parseInt(answers.port, 10)
+    }
+  };
+}
+
+/**
+ * Voice Server only setup (non-Pi)
+ * Asks for SIP, API keys, devices, and API server connection
+ * @param {object} config - Current config
+ * @returns {Promise<object>} Updated config
+ */
+async function setupVoiceServer(config) {
+  // Ensure secrets exist
+  if (!config.secrets) {
+    config.secrets = {
+      drachtio: generateSecret(),
+      freeswitch: generateSecret()
+    };
+  }
+
+  // Set deployment mode
+  if (!config.deployment) {
+    config.deployment = { mode: 'voice-server' };
+  } else {
+    config.deployment.mode = 'voice-server';
+  }
+
+  // Step 1: 3CX/SIP Configuration
+  console.log(chalk.bold('\n☎️  SIP Configuration'));
+  config = await setupSIP(config);
+
+  // Step 2: API Server Connection
+  console.log(chalk.bold('\n🖥️  API Server Connection'));
+  const apiServerAnswers = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'apiServerIp',
+      message: 'API Server IP address:',
+      default: config.deployment.apiServerIp || '',
+      validate: (input) => {
+        if (!input || input.trim() === '') {
+          return 'API Server IP is required';
+        }
+        if (!validateIP(input)) {
+          return 'Invalid IP address format';
+        }
+        return true;
+      }
+    },
+    {
+      type: 'input',
+      name: 'apiServerPort',
+      message: 'API Server port:',
+      default: config.server?.claudeApiPort || 3333,
+      validate: (input) => {
+        const port = parseInt(input, 10);
+        if (isNaN(port) || port < 1024 || port > 65535) {
+          return 'Port must be between 1024 and 65535';
+        }
+        return true;
+      }
+    }
+  ]);
+
+  config.deployment.apiServerIp = apiServerAnswers.apiServerIp;
+  config.server = config.server || {};
+  config.server.claudeApiPort = parseInt(apiServerAnswers.apiServerPort, 10);
+
+  // Step 3: API Keys (for TTS/STT)
+  console.log(chalk.bold('\n📡 API Configuration'));
+  config = await setupAPIKeys(config);
+
+  // Step 4: Device Configuration
+  console.log(chalk.bold('\n🤖 Device Configuration'));
+  config = await setupDevice(config);
+
+  // Step 5: Server Configuration (IP only, no API port)
+  console.log(chalk.bold('\n⚙️  Server Configuration'));
+  const localIp = getLocalIP();
+  const serverAnswers = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'externalIp',
+      message: 'Server LAN IP (for RTP audio):',
+      default: config.server.externalIp === 'auto' ? localIp : config.server.externalIp,
+      validate: (input) => {
+        if (!input || input.trim() === '') {
+          return 'IP address is required';
+        }
+        if (!validateIP(input)) {
+          return 'Invalid IP address format';
+        }
+        return true;
+      }
+    },
+    {
+      type: 'input',
+      name: 'httpPort',
+      message: 'Voice app HTTP port:',
+      default: config.server.httpPort || 3000,
+      validate: (input) => {
+        const port = parseInt(input, 10);
+        if (isNaN(port) || port < 1024 || port > 65535) {
+          return 'Port must be between 1024 and 65535';
+        }
+        return true;
+      }
+    }
+  ]);
+
+  config.server.externalIp = serverAnswers.externalIp;
+  config.server.httpPort = parseInt(serverAnswers.httpPort, 10);
+
+  return config;
+}
+
+/**
+ * Both (all-in-one) setup flow
+ * @param {object} config - Current config
+ * @returns {Promise<object>} Updated config
+ */
+async function setupBoth(config) {
   // Ensure secrets exist for existing configs (backwards compatibility)
   if (!config.secrets) {
     config.secrets = {
@@ -108,7 +396,9 @@ async function setupStandard(config) {
 
   // Ensure deployment mode exists
   if (!config.deployment) {
-    config.deployment = { mode: 'standard' };
+    config.deployment = { mode: 'both' };
+  } else {
+    config.deployment.mode = 'both';
   }
 
   // Step 1: API Keys
@@ -127,22 +417,7 @@ async function setupStandard(config) {
   console.log(chalk.bold('\n⚙️  Server Configuration'));
   config = await setupServer(config);
 
-  // Save configuration
-  const spinner = ora('Saving configuration...').start();
-  try {
-    await saveConfig(config);
-    spinner.succeed('Configuration saved');
-  } catch (error) {
-    spinner.fail(`Failed to save configuration: ${error.message}`);
-    throw error;
-  }
-
-  // Summary
-  console.log(chalk.bold.green('\n✓ Setup complete!\n'));
-  console.log(chalk.gray('Next steps:'));
-  console.log(chalk.gray('  1. Run "claude-phone start" to launch services'));
-  console.log(chalk.gray('  2. Call extension ' + config.devices[0].extension + ' from your phone'));
-  console.log(chalk.gray('  3. Start talking to Claude!\n'));
+  return config;
 }
 
 /**

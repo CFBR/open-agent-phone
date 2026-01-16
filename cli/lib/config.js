@@ -38,7 +38,23 @@ export async function loadConfig() {
   }
 
   const data = await fs.promises.readFile(configPath, 'utf8');
-  return JSON.parse(data);
+  const config = JSON.parse(data);
+
+  // Ensure installationType exists for backward compatibility
+  if (!config.installationType) {
+    config.installationType = 'both';
+  }
+
+  return config;
+}
+
+/**
+ * Get the installation type from config
+ * @param {object} config - Configuration object
+ * @returns {string} Installation type ('voice-server' | 'api-server' | 'both')
+ */
+export function getInstallationType(config) {
+  return config.installationType || 'both';
 }
 
 /**

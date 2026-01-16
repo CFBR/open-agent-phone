@@ -13,10 +13,13 @@ import { saveState, loadState, rollback } from './prereqs/utils/rollback.js';
 
 /**
  * Run all prerequisite checks
- * @param {object} _options - Options
+ * @param {object} options - Options
+ * @param {string} options.type - Installation type ('minimal' | 'api-server' | 'voice-server' | 'both')
  * @returns {Promise<{success: boolean, results: object}>}
  */
-export async function runPrereqChecks(_options = {}) {
+export async function runPrereqChecks(options = {}) {
+  const { type = 'both' } = options;
+
   console.log(chalk.bold.cyan('\n🔍 Checking prerequisites...\n'));
 
   // Detect platform
@@ -28,23 +31,30 @@ export async function runPrereqChecks(_options = {}) {
   }
   console.log('');
 
-  // Run all checks in parallel
-  const [nodeResult, dockerResult, composeResult, diskResult, networkResult] =
-    await Promise.all([
-      checkNode(platform),
-      checkDocker(platform),
-      checkCompose(platform),
-      checkDisk(platform),
-      checkNetwork(platform)
-    ]);
+  // Determine which checks to run based on type
+  const checksToRun = [];
+  const results = {};
 
-  const results = {
-    node: nodeResult,
-    docker: dockerResult,
-    compose: composeResult,
-    disk: diskResult,
-    network: networkResult
-  };
+  // Node.js is always required
+  checksToRun.push({ name: 'node', check: checkNode(platform) });
+
+  // Add type-specific checks
+  if (type === 'voice-server' || type === 'both') {
+    checksToRun.push({ name: 'docker', check: checkDocker(platform) });
+    checksToRun.push({ name: 'compose', check: checkCompose(platform) });
+    checksToRun.push({ name: 'disk', check: checkDisk(platform) });
+  }
+
+  // Network check for auto-fix capability (not for API server only)
+  if (type !== 'api-server') {
+    checksToRun.push({ name: 'network', check: checkNetwork(platform) });
+  }
+
+  // Run checks in parallel
+  const checkResults = await Promise.all(checksToRun.map(c => c.check));
+  checksToRun.forEach((c, i) => {
+    results[c.name] = checkResults[i];
+  });
 
   // Display results
   displayResults(results);
@@ -60,8 +70,8 @@ export async function runPrereqChecks(_options = {}) {
   // Some checks failed - offer auto-fix
   console.log(chalk.yellow('\n❌ Some prerequisites not met.\n'));
 
-  // Check if we're offline
-  if (networkResult.autoFixDisabled) {
+  // Check if we're offline (only if network check was run)
+  if (results.network && results.network.autoFixDisabled) {
     console.log(chalk.yellow('⚠️  Auto-fix is disabled (npm registry unreachable)'));
     console.log(chalk.gray('Please check your internet connection.\n'));
     return { success: false, results };

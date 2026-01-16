@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadConfig, configExists } from '../config.js';
+import { loadConfig, configExists, getInstallationType } from '../config.js';
 import { getContainerStatus } from '../docker.js';
 import { isServerRunning, getServerPid } from '../process-manager.js';
 import { checkClaudeApiServer } from '../network.js';
@@ -19,12 +19,35 @@ export async function statusCommand() {
   }
 
   const config = await loadConfig();
-
-  // Check deployment mode
+  const installationType = getInstallationType(config);
   const isPiSplit = config.deployment && config.deployment.mode === 'pi-split';
 
-  // Claude API Server
+  // Show installation type
+  console.log(chalk.bold('Installation Type:'));
+  console.log(chalk.gray(`  ${installationType === 'api-server' ? 'API Server' : installationType === 'voice-server' ? 'Voice Server' : 'Both (all-in-one)'}`));
+  console.log();
+
+  // Show type-appropriate status
+  if (installationType === 'api-server' || installationType === 'both') {
+    await showApiServerStatus(config, isPiSplit);
+  }
+
+  if (installationType === 'voice-server' || installationType === 'both') {
+    await showVoiceServerStatus(config, isPiSplit, installationType);
+  }
+
+  console.log();
+}
+
+/**
+ * Show API server status
+ * @param {object} config - Configuration
+ * @param {boolean} isPiSplit - Is Pi split mode
+ * @returns {Promise<void>}
+ */
+async function showApiServerStatus(config, isPiSplit) {
   console.log(chalk.bold('Claude API Server:'));
+
   if (isPiSplit) {
     // Pi-split mode: Check remote API server
     const apiUrl = `http://${config.deployment.pi.macIp}:${config.server.claudeApiPort}`;
@@ -49,9 +72,19 @@ export async function statusCommand() {
       console.log(chalk.red('  ✗ Not running'));
     }
   }
+  console.log();
+}
 
+/**
+ * Show voice server status
+ * @param {object} config - Configuration
+ * @param {boolean} isPiSplit - Is Pi split mode
+ * @param {string} installationType - Installation type
+ * @returns {Promise<void>}
+ */
+async function showVoiceServerStatus(config, isPiSplit, installationType) {
   // Docker Containers
-  console.log(chalk.bold('\nDocker Containers:'));
+  console.log(chalk.bold('Docker Containers:'));
   const containers = await getContainerStatus();
 
   if (containers.length === 0) {
@@ -65,29 +98,42 @@ export async function statusCommand() {
       console.log(color(`  ${icon} ${container.name}: ${container.status}`));
     }
   }
+  console.log();
 
   // Devices
-  console.log(chalk.bold('\nConfigured Devices:'));
-  for (const device of config.devices) {
-    console.log(chalk.gray(`  • ${device.name} (extension ${device.extension})`));
+  console.log(chalk.bold('Configured Devices:'));
+  if (config.devices && config.devices.length > 0) {
+    for (const device of config.devices) {
+      console.log(chalk.gray(`  • ${device.name} (extension ${device.extension})`));
+    }
+  } else {
+    console.log(chalk.gray('  (none configured)'));
   }
+  console.log();
 
   // Network
-  console.log(chalk.bold('\nNetwork:'));
+  console.log(chalk.bold('Network:'));
   if (isPiSplit) {
     console.log(chalk.gray(`  Deployment Mode: Pi Split`));
     console.log(chalk.gray(`  Pi IP: ${config.server.externalIp}`));
     console.log(chalk.gray(`  API Server IP: ${config.deployment.pi.macIp}`));
     console.log(chalk.gray(`  Drachtio Port: ${config.deployment.pi.drachtioPort}`));
     if (config.deployment.pi.has3cxSbc) {
-      console.log(chalk.yellow('  3CX SBC detected (using port 5080)'));
+      console.log(chalk.yellow('  3CX SBC detected (using port 5070)'));
+    }
+  } else if (installationType === 'voice-server') {
+    console.log(chalk.gray(`  Deployment Mode: Voice Server`));
+    console.log(chalk.gray(`  Server IP: ${config.server.externalIp}`));
+    if (config.deployment.apiServerIp) {
+      console.log(chalk.gray(`  API Server IP: ${config.deployment.apiServerIp}`));
     }
   } else {
-    console.log(chalk.gray(`  Deployment Mode: Standard`));
+    console.log(chalk.gray(`  Deployment Mode: Both (all-in-one)`));
     console.log(chalk.gray(`  External IP: ${config.server.externalIp}`));
   }
-  console.log(chalk.gray(`  SIP Domain: ${config.sip.domain}`));
-  console.log(chalk.gray(`  SIP Registrar: ${config.sip.registrar}`));
 
-  console.log();
+  if (config.sip) {
+    console.log(chalk.gray(`  SIP Domain: ${config.sip.domain}`));
+    console.log(chalk.gray(`  SIP Registrar: ${config.sip.registrar}`));
+  }
 }
