@@ -3,6 +3,8 @@ import chalk from 'chalk';
 import ora from 'ora';
 import path from 'path';
 import crypto from 'crypto';
+import fs from 'fs';
+import { execSync } from 'child_process';
 import {
   loadConfig,
   saveConfig,
@@ -201,6 +203,28 @@ async function setupInstallationType(installationType, existingConfig, isPi, opt
   } catch (error) {
     spinner.fail(`Failed to save configuration: ${error.message}`);
     throw error;
+  }
+
+  // Install dependencies for API server types
+  if (installationType === 'api-server' || installationType === 'both') {
+    const apiServerPath = config.paths?.claudeApiServer;
+    if (apiServerPath && fs.existsSync(apiServerPath)) {
+      const nodeModulesPath = path.join(apiServerPath, 'node_modules');
+      if (!fs.existsSync(nodeModulesPath)) {
+        const installSpinner = ora('Installing API server dependencies...').start();
+        try {
+          execSync('npm install', {
+            cwd: apiServerPath,
+            stdio: 'pipe'
+          });
+          installSpinner.succeed('API server dependencies installed');
+        } catch (error) {
+          installSpinner.fail(`Failed to install dependencies: ${error.message}`);
+          console.log(chalk.yellow('\nYou can install manually with:'));
+          console.log(chalk.cyan(`  cd ${apiServerPath} && npm install\n`));
+        }
+      }
+    }
   }
 
   // Type-specific success messages
