@@ -860,9 +860,10 @@ async function setupSBC(config) {
     }
   ]);
 
-  // Set domain and registrar to same value (SBC handles the connection)
+  // Domain is the 3CX FQDN (for From/To SIP headers)
   config.sip.domain = answers.fqdn;
-  config.sip.registrar = answers.fqdn;
+  // Registrar is the LOCAL SBC (drachtio registers with local SBC, not cloud)
+  config.sip.registrar = '127.0.0.1';
 
   return config;
 }
