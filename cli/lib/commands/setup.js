@@ -560,9 +560,8 @@ async function setupPi(config) {
   config.deployment.pi.has3cxSbc = has3cxSbc;
   config.deployment.pi.drachtioPort = has3cxSbc ? 5070 : 5060;
 
-  // Ask for API server IP (separate prompts to avoid inquirer issues)
-  console.log(chalk.gray('[DEBUG] Starting API server IP prompt...'));
-  const { macIp } = await inquirer.prompt([
+  // Ask for API server IP and port first, then check connectivity
+  const apiServerAnswers = await inquirer.prompt([
     {
       type: 'input',
       name: 'macIp',
@@ -577,26 +576,11 @@ async function setupPi(config) {
         }
         return true;
       }
-    }
-  ]);
-  console.log(chalk.gray('[DEBUG] API server IP entered:', macIp));
-
-  // Check reachability on API server port (default 3333)
-  const defaultPort = config.server?.claudeApiPort || 3333;
-  const reachSpinner = ora(`Checking API server reachability on port ${defaultPort}...`).start();
-  const reachable = await isReachable(macIp, defaultPort);
-  if (reachable) {
-    reachSpinner.succeed(`API server ${macIp}:${defaultPort} is reachable`);
-  } else {
-    reachSpinner.warn(`Cannot reach ${macIp}:${defaultPort} - make sure API server is running and port is open`);
-  }
-
-  console.log(chalk.gray('[DEBUG] Starting port prompt...'));
-  const { claudeApiPort } = await inquirer.prompt([
+    },
     {
       type: 'input',
       name: 'claudeApiPort',
-      message: 'Claude API server port (on API server):',
+      message: 'Claude API server port:',
       default: String(config.server?.claudeApiPort || 3333),
       validate: (input) => {
         const port = parseInt(input, 10);
@@ -607,28 +591,26 @@ async function setupPi(config) {
       }
     }
   ]);
-  console.log(chalk.gray('[DEBUG] Port entered:', claudeApiPort));
 
-  const macAnswers = { macIp, claudeApiPort };
+  const { macIp, claudeApiPort } = apiServerAnswers;
 
-  console.log(chalk.gray('[DEBUG] Prompts completed. Answers:'), JSON.stringify(macAnswers));
-
-  config.deployment.pi.macIp = macAnswers.macIp;
+  config.deployment.pi.macIp = macIp;
   config.server = config.server || {};
-  config.server.claudeApiPort = parseInt(macAnswers.claudeApiPort, 10);
+  config.server.claudeApiPort = parseInt(claudeApiPort, 10);
 
-  console.log(chalk.gray('[DEBUG] Config updated, checking API health...'));
-
-  // Check API server health
-  const apiHealthSpinner = ora('Checking Claude API server health...').start();
-  const apiUrl = `http://${config.deployment.pi.macIp}:${config.server.claudeApiPort}`;
+  // Now check connectivity on the specified port
+  const reachSpinner = ora(`Checking API server at ${macIp}:${claudeApiPort}...`).start();
+  const apiUrl = `http://${macIp}:${claudeApiPort}`;
   const apiHealth = await checkClaudeApiServer(apiUrl);
 
   if (apiHealth.healthy) {
-    apiHealthSpinner.succeed(`Claude API server is healthy at ${apiUrl}`);
+    reachSpinner.succeed(`API server is healthy at ${apiUrl}`);
+  } else if (apiHealth.reachable) {
+    reachSpinner.warn(`API server reachable but not responding at ${apiUrl}`);
+    console.log(chalk.yellow('  ⚠️  Make sure claude-api-server is running\n'));
   } else {
-    apiHealthSpinner.warn(`Claude API server not responding at ${apiUrl}`);
-    console.log(chalk.yellow('  ⚠️  Make sure to run "claude-phone api-server" on your API server\n'));
+    reachSpinner.warn(`Cannot reach API server at ${apiUrl}`);
+    console.log(chalk.yellow('  ⚠️  Make sure API server is running and port is open (firewall)\n'));
   }
 
   // Step 1: API Keys (only for voice services - TTS/STT)
