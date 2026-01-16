@@ -21,13 +21,28 @@ import { detectPlatform, isRaspberryPi } from '../platform.js';
 import { checkPort, detect3cxSbc } from '../port-check.js';
 import { checkPiPrerequisites } from '../prerequisites.js';
 import { isReachable, checkClaudeApiServer } from '../network.js';
+import { runPrereqChecks } from '../prereqs.js';
 
 /**
  * Setup command - Interactive wizard for configuration
+ * @param {object} options - Command options
  * @returns {Promise<void>}
  */
-export async function setupCommand() {
+export async function setupCommand(options = {}) {
   console.log(chalk.bold.cyan('\n🎯 Claude Phone Setup\n'));
+
+  // Run prerequisite checks unless skipped
+  if (!options.skipPrereqs) {
+    const prereqResult = await runPrereqChecks();
+
+    if (!prereqResult.success) {
+      console.log(chalk.red('\n❌ Prerequisites not met. Please fix the issues above and try again.\n'));
+      console.log(chalk.gray('You can skip prerequisite checks with: claude-phone setup --skip-prereqs\n'));
+      process.exit(1);
+    }
+  } else {
+    console.log(chalk.yellow('⚠️  Skipping prerequisite checks (--skip-prereqs flag)\n'));
+  }
 
   // Detect platform
   const platform = await detectPlatform();

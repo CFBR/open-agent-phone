@@ -30,9 +30,10 @@ program
 program
   .command('setup')
   .description('Interactive setup wizard for API keys, 3CX config, and devices')
-  .action(async () => {
+  .option('--skip-prereqs', 'Skip prerequisite checks (advanced users only)')
+  .action(async (options) => {
     try {
-      await setupCommand();
+      await setupCommand(options);
     } catch (error) {
       console.error(chalk.red(`\n✗ Setup failed: ${error.message}\n`));
       process.exit(1);
