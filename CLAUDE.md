@@ -333,6 +333,16 @@ None documented yet. This is the initial commit.
 - [x] SBC-everywhere model works for both cloud and on-prem 3CX
 - [x] Standard mode unchanged (backward compatible)
 
+**Prerequisite Checks with Auto-Fix:** ✅ COMPLETE
+- [x] Pre-flight checks run before setup prompts (Node.js, Docker, Compose, disk, network)
+- [x] Platform detection (OS, distro, architecture, package manager)
+- [x] Secure auto-fix with script preview and double confirmation
+- [x] Platform-specific installers (apt, dnf, pacman, brew)
+- [x] Docker Desktop flow for macOS with wait-for-daemon
+- [x] Rollback support with state tracking
+- [x] `--skip-prereqs` flag for advanced users
+- [x] Offline mode graceful degradation
+
 **Other:**
 - [ ] Webhook notifications for call events
 - [ ] Call recording and transcripts
