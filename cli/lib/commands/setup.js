@@ -22,7 +22,7 @@ import { getLocalIP, getProjectRoot } from '../utils.js';
 import { isRaspberryPi } from '../platform.js';
 import { detect3cxSbc } from '../port-check.js';
 import { checkPiPrerequisites } from '../prerequisites.js';
-import { isReachable, checkClaudeApiServer } from '../network.js';
+import { checkClaudeApiServer } from '../network.js';
 import { runPrereqChecks } from '../prereqs.js';
 
 /**
