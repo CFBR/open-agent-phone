@@ -134,8 +134,9 @@ services:
     command: >
       freeswitch
       --sip-port 5080
-      --rtp-range-start 20000
-      --rtp-range-end 20100
+      --rtp-range-start 30000
+      --rtp-range-end 30100
+    # RTP ports 30000-30100 avoid conflict with 3CX SBC (uses 20000-20099)
     environment:
       - EXTERNAL_IP=${externalIp}
 

@@ -273,6 +273,40 @@ async function conversationLoop(endpoint, dialog, callUuid, options, deviceConfi
 }
 
 /**
+ * Strip video tracks from SDP (FreeSWITCH doesn't support H.261 and rejects with 488)
+ * Keeps only audio tracks to ensure codec negotiation succeeds
+ */
+function stripVideoFromSdp(sdp) {
+  if (!sdp) return sdp;
+
+  const lines = sdp.split('\r\n');
+  const result = [];
+  let inVideoSection = false;
+
+  for (const line of lines) {
+    // Check if we're entering a video media section
+    if (line.startsWith('m=video')) {
+      inVideoSection = true;
+      continue; // Skip the m=video line
+    }
+
+    // Check if we're entering a new media section (audio, etc.)
+    if (line.startsWith('m=') && !line.startsWith('m=video')) {
+      inVideoSection = false;
+    }
+
+    // Skip all lines in the video section
+    if (inVideoSection) {
+      continue;
+    }
+
+    result.push(line);
+  }
+
+  return result.join('\r\n');
+}
+
+/**
  * Handle incoming SIP INVITE
  */
 async function handleInvite(req, res, options) {
@@ -296,7 +330,14 @@ async function handleInvite(req, res, options) {
   console.log('[' + new Date().toISOString() + '] CALL Incoming from: ' + callerId + ' to ext: ' + (dialedExt || 'unknown'));
 
   try {
-    const result = await mediaServer.connectCaller(req, res);
+    // Strip video from SDP to avoid FreeSWITCH 488 error with unsupported video codecs
+    const originalSdp = req.body;
+    const audioOnlySdp = stripVideoFromSdp(originalSdp);
+    if (originalSdp !== audioOnlySdp) {
+      console.log('[' + new Date().toISOString() + '] CALL Stripped video track from SDP');
+    }
+
+    const result = await mediaServer.connectCaller(req, res, { remoteSdp: audioOnlySdp });
     const { endpoint, dialog } = result;
     const callUuid = endpoint.uuid;
 

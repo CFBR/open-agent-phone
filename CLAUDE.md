@@ -54,13 +54,24 @@ Claude Phone gives your Claude Code installation a phone number through 3CX PBX 
 ```
 claude-phone/
 ├── CLAUDE.md                 # This file
+├── CONSTITUTION.md           # DevFlow 2.0 development principles
 ├── README.md                 # User-facing documentation
 ├── install.sh                # One-command installer
-├── package.json              # Root package (hooks, linting)
+├── package.json              # Root package (hooks, linting, tests)
 ├── eslint.config.js          # ESLint configuration
 ├── docker-compose.yml        # Multi-container orchestration
 ├── .env.example              # Environment template
 ├── .gitignore
+├── .claude/
+│   └── commands/             # Project slash commands (DevFlow)
+│       ├── feature.md        # /feature spec|start|ship
+│       ├── test.md           # /test
+│       ├── fix.md            # /fix [N]
+│       ├── issues.md         # /issues
+│       ├── investigate.md    # /investigate
+│       ├── project.md        # /project
+│       ├── batch.md          # /batch
+│       └── design.md         # /design
 ├── .husky/                   # Git hooks (pre-commit)
 │   └── pre-commit            # Runs lint before commits
 ├── cli/                      # Unified CLI tool
@@ -154,14 +165,45 @@ curl http://localhost:3000/api/calls
 
 ## Development Workflow
 
+This project follows **DevFlow 2.0** methodology. See [CONSTITUTION.md](./CONSTITUTION.md) for full development principles.
+
 ### Slash Commands (DevFlow)
+
+These commands are defined in `.claude/commands/` and route to DevFlow workflows.
 
 | Command | Purpose |
 |---------|---------|
-| `/feature spec [name]` | Create feature specification with acceptance criteria |
-| `/feature start [name]` | Start building a feature (reads spec if exists) |
-| `/feature ship` | Run checks, review, and merge feature |
-| `/project init` | Initialize new project structure |
+| `/feature spec [name]` | Create feature spec (SPEC.md, PLAN.md, TASKS.md) |
+| `/feature start [name]` | Build a feature with TDD |
+| `/feature ship` | Run checks, review, merge to main |
+| `/test` | Run all project tests (auto-detects runner) |
+| `/test --coverage` | Run tests with coverage report |
+| `/fix [N]` | Fix GitHub issue #N with TDD |
+| `/issues` | Create or list GitHub issues |
+| `/issues work [N]` | Start working on issue #N |
+| `/investigate [problem]` | Debug/troubleshoot without changing code |
+| `/project` | Show project info and management |
+| `/batch` | Work through multiple issues |
+| `/design` | Visual design workflow |
+
+**Natural language also works:**
+- "spec feature auth" → `/feature spec auth`
+- "build auth" → `/feature start auth`
+- "ship it" → `/feature ship`
+- "run tests" → `/test`
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run CLI tests only
+npm run test:cli
+
+# Run voice-app tests only
+npm run test:voice-app
+```
 
 ### Git Hooks
 
@@ -304,7 +346,24 @@ Critical variables (see `.env.example`):
 
 ## Known Issues
 
-None documented yet. This is the initial commit.
+### RTP Port Conflict with 3CX SBC (Fixed)
+
+**Symptom:** Calls connect but FreeSWITCH returns 488 "INCOMPATIBLE_DESTINATION" error. Logs show `AUDIO RTP REPORTS ERROR: [Bind Error! IP:port]`.
+
+**Cause:** 3CX SBC uses RTP ports 20000-20099 by default. If FreeSWITCH is configured to use the same range, it can't bind ports and rejects calls.
+
+**Fix:** FreeSWITCH must use a non-conflicting RTP range. The CLI template and main docker-compose.yml use 30000-30100.
+
+**Manual fix for existing deployments:**
+```bash
+# Edit docker-compose.yml
+sed -i 's/--rtp-range-start 20000/--rtp-range-start 30000/' ~/.claude-phone/docker-compose.yml
+sed -i 's/--rtp-range-end 20100/--rtp-range-end 30100/' ~/.claude-phone/docker-compose.yml
+
+# Recreate FreeSWITCH container
+cd ~/.claude-phone && docker-compose up -d --force-recreate freeswitch
+docker-compose restart voice-app
+```
 
 ## Future Enhancements
 

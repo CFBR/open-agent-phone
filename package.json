@@ -4,6 +4,9 @@
   "description": "Voice interface for Claude Code via SIP/3CX",
   "private": true,
   "scripts": {
+    "test": "npm run test:cli && npm run test:voice-app",
+    "test:cli": "cd cli && npm test",
+    "test:voice-app": "cd voice-app && node --test test/**/*.test.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "lint:voice-app": "eslint voice-app/",
