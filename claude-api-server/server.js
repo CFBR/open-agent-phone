@@ -74,7 +74,7 @@ function buildClaudeEnvironment() {
     '/sbin'
   ].join(':');
 
-  return {
+  const env = {
     ...process.env,
     ...paiEnv,
     PATH: fullPath,
@@ -91,6 +91,12 @@ function buildClaudeEnvironment() {
     CLAUDECODE: '1',
     CLAUDE_CODE_ENTRYPOINT: 'cli',
   };
+
+  // CRITICAL: Remove ANTHROPIC_API_KEY so Claude CLI uses subscription auth
+  // If ANTHROPIC_API_KEY is set (even to placeholder), CLI tries API auth instead
+  delete env.ANTHROPIC_API_KEY;
+
+  return env;
 }
 
 // Pre-build the environment once at startup
@@ -288,7 +294,9 @@ app.post('/ask', async (req, res) => {
     if (code !== 0) {
       console.error(`[${new Date().toISOString()}] ERROR: Claude CLI exited with code ${code}`);
       console.error(`STDERR: ${stderr}`);
-      return res.json({ success: false, error: `Claude CLI failed: ${stderr}`, duration_ms });
+      console.error(`STDOUT: ${stdout.substring(0, 500)}`);
+      const errorMsg = stderr || stdout || `Exit code ${code}`;
+      return res.json({ success: false, error: `Claude CLI failed: ${errorMsg}`, duration_ms });
     }
 
     const { response, sessionId } = parseClaudeStdout(stdout);
