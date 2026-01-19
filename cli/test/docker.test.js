@@ -141,7 +141,7 @@ test('docker compose generation', async (t) => {
       deployment: {
         mode: 'pi-split',
         pi: {
-          macApiUrl: 'http://192.168.1.100:3333'
+          macIp: '192.168.1.100'
         }
       }
     };

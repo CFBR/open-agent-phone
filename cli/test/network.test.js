@@ -14,7 +14,8 @@ test('network module', async (t) => {
   });
 
   await t.test('isReachable detects localhost as reachable', async () => {
-    const result = await isReachable('127.0.0.1', 1000);
+    // isReachable(ip, port, timeout) - use default port 3333, set timeout to 1000ms
+    const result = await isReachable('127.0.0.1', 3333, 1000);
 
     assert.strictEqual(result, true, 'Localhost should be reachable');
   });
@@ -22,7 +23,8 @@ test('network module', async (t) => {
   await t.test('isReachable detects unreachable IP', async () => {
     // Use a non-routable IP that will timeout
     // 192.0.2.1 is TEST-NET-1, reserved for documentation
-    const result = await isReachable('192.0.2.1', 500);
+    // isReachable(ip, port, timeout) - use default port 3333, set timeout to 500ms
+    const result = await isReachable('192.0.2.1', 3333, 500);
 
     assert.strictEqual(result, false, 'Test IP should not be reachable');
   });
@@ -30,7 +32,8 @@ test('network module', async (t) => {
   await t.test('isReachable times out correctly', async () => {
     const timeout = 500;
     const startTime = Date.now();
-    await isReachable('192.0.2.1', timeout);
+    // isReachable(ip, port, timeout) - use default port 3333, pass timeout as 3rd arg
+    await isReachable('192.0.2.1', 3333, timeout);
     const duration = Date.now() - startTime;
 
     // Should timeout within timeout + 200ms margin
@@ -38,7 +41,8 @@ test('network module', async (t) => {
   });
 
   await t.test('isReachable handles invalid IP gracefully', async () => {
-    const result = await isReachable('not-an-ip', 500);
+    // isReachable(ip, port, timeout) - port doesn't matter for invalid IP, set timeout to 500ms
+    const result = await isReachable('not-an-ip', 3333, 500);
 
     assert.strictEqual(result, false, 'Invalid IP should return false');
   });
