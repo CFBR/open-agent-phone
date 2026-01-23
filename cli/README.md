@@ -7,7 +7,7 @@ Unified command-line interface for Claude Phone. Single-command setup and manage
 ### One-Line Install (macOS/Linux)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/networkchuck/claude-phone/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/theNetworkChuck/claude-phone/main/install.sh | bash
 ```
 
 ### Manual Install

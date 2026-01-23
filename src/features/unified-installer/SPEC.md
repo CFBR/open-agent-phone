@@ -107,7 +107,7 @@ This complexity creates a high barrier to entry for homelabbers and developers w
 
 ## Decisions (Resolved)
 
-1. **Install URL**: GitHub raw URL - `curl -fsSL https://raw.githubusercontent.com/networkchuck/claude-phone/main/install.sh | bash`
+1. **Install URL**: GitHub raw URL - `curl -fsSL https://raw.githubusercontent.com/theNetworkChuck/claude-phone/main/install.sh | bash`
 2. **Config location**: `~/.claude-phone/` - dedicated directory, easy to find and backup
 3. **Process management**: Simple background process with PID file at `~/.claude-phone/server.pid` - minimal dependencies
 

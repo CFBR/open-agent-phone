@@ -91,7 +91,7 @@ Single machine runs everything. Simpler setup, requires one beefy server.
 ### One-Line Install
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/networkchuck/claude-phone/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/theNetworkChuck/claude-phone/main/install.sh | bash
 ```
 
 ### Setup & Run

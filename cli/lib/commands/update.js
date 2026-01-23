@@ -160,7 +160,7 @@ function showManualInstructions(release) {
   console.log(chalk.bold('   cp ~/.claude-phone/config.json ~/config.json.backup\n'));
 
   console.log(chalk.gray('3. Run the installer:'));
-  console.log(chalk.bold('   curl -sSL https://raw.githubusercontent.com/networkchuck/claude-phone/main/install.sh | bash\n'));
+  console.log(chalk.bold('   curl -sSL https://raw.githubusercontent.com/theNetworkChuck/claude-phone/main/install.sh | bash\n'));
 
   console.log(chalk.gray('4. Start services:'));
   console.log(chalk.bold('   claude-phone start\n'));
