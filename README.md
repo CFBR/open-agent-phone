@@ -226,6 +226,7 @@ npm run lint:fix
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
 - [Outbound API](voice-app/README-OUTBOUND.md) - Outbound calling API reference
 - [Deployment](voice-app/DEPLOYMENT.md) - Production deployment guide
+- [Claude Code Skill](docs/CLAUDE-CODE-SKILL.md) - Build a "call me" skill for Claude Code
 
 ## License
 
