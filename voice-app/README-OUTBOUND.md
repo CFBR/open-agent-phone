@@ -233,12 +233,69 @@ rest_command:
     payload: '{"to": "+15551234567", "message": "{{ message }}"}'
 ```
 
-### n8n Workflow
+### n8n Workflow: Automated Alert System
 
-1. Webhook trigger receives event
-2. HTTP Request node POSTs to `/api/outbound-call`
-3. Wait node pauses for call completion
-4. HTTP Request node checks status via `/api/call/:callId`
+This example workflow queries a device for status, then calls you if there's a problem.
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────┐     ┌──────────────┐
+│   Trigger    │ ──▶ │ Query Device │ ──▶ │ If Alert │ ──▶ │  Call User   │
+│ (Schedule)   │     │ POST /query  │     │  Needed  │     │ POST /call   │
+└──────────────┘     └──────────────┘     └──────────┘     └──────────────┘
+```
+
+**Node 1: Trigger**
+- Use Schedule Trigger (e.g., every 5 minutes) or Manual Trigger for testing
+
+**Node 2: HTTP Request - Query Device**
+```
+Method: POST
+URL: http://YOUR_SERVER:3000/api/query
+Body (JSON):
+```
+```json
+{
+  "query": "Check the system health. Alert me if anything needs attention.",
+  "device": "Morpheus",
+  "format": "json",
+  "schema": {
+    "queryType": "alert_check",
+    "requiredFields": ["call_user", "reason"],
+    "fieldGuidance": {
+      "call_user": "Boolean - true if something needs attention",
+      "reason": "One sentence explaining the situation, under 30 words"
+    }
+  },
+  "timeout": 120
+}
+```
+
+**Node 3: If - Check Alert Condition**
+```
+Condition: {{ $json.structured.call_user }} equals true
+```
+
+**Node 4: HTTP Request - Make Call (True branch only)**
+```
+Method: POST
+URL: http://YOUR_SERVER:3000/api/outbound-call
+Body (JSON):
+```
+```json
+{
+  "to": "YOUR_EXTENSION",
+  "message": "Hey! {{ $json.structured.reason }}. Want details?",
+  "mode": "conversation",
+  "device": "Morpheus"
+}
+```
+
+**How it works:**
+1. Trigger fires (on schedule or manually)
+2. Queries your device with a structured schema request
+3. Device returns JSON with `call_user: true/false` and `reason`
+4. If `call_user` is true, initiates outbound call in conversation mode
+5. You answer and can ask follow-up questions
 
 ### Shell Script
 
