@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Claude Phone" width="200">
+</p>
+
 # Claude Phone
 
 Voice interface for Claude Code via SIP/3CX. Call your AI, and your AI can call you.
