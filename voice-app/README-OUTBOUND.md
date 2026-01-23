@@ -1,418 +1,253 @@
-# Outbound Calling Implementation
+# Outbound Calling API
 
-**Created:** December 19, 2025
-**For:** Video 508 - Call Your Server - Voice Interface via 3CX
-**Status:** ✅ Implementation Complete - Ready for Deployment
-
----
+API reference for initiating outbound calls from Claude Phone.
 
 ## Overview
 
-Minimal outbound calling system that allows you to:
-1. POST to `/api/outbound-call` with a phone number and message
-2. Server initiates SIP call via drachtio → 3CX
-3. When answered, plays TTS message via ElevenLabs
-4. Hangs up automatically
+The outbound calling API allows your server to call phone numbers and deliver messages. Use cases:
 
-**This enables THE GRAND PAYOFF:** Your server can call you when something happens.
+- Server alerts ("Your disk is 95% full")
+- Automated notifications
+- Two-way conversations triggered by events
 
----
-
-## Files Created
-
-All files are in `/packages/voice-app/lib/`:
-
-| File | Lines | Purpose |
-|------|-------|---------|
-| `outbound-handler.js` | 242 | Core SIP logic using `srf.createUAC()` with Early Offer pattern |
-| `outbound-session.js` | 251 | State machine for call lifecycle (QUEUED → DIALING → PLAYING → COMPLETED) |
-| `outbound-routes.js` | 248 | Express routes for POST /api/outbound-call and status endpoints |
-| `logger.js` | 29 | Simple logging utility (if not already on server) |
-
-**Documentation:**
-- `DEPLOYMENT.md` - Step-by-step deployment guide
-- `INTEGRATION-EXAMPLE.js` - Code examples for modifying index.js
-- `README-OUTBOUND.md` - This file
-
----
-
-## Architecture
-
-```
-HTTP POST /api/outbound-call
-         │
-         ▼
-┌─────────────────────┐
-│ outbound-routes.js  │  Validate request, create session
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ outbound-session.js │  State: QUEUED → DIALING
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ outbound-handler.js │  1. Create FreeSWITCH endpoint (Early Offer)
-│                     │  2. srf.createUAC(sipUri, localSdp)
-│                     │  3. On answer: endpoint.modify(remoteSdp)
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│   Phone Rings! 📞   │  State: PLAYING
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  tts-service.js     │  Generate TTS via ElevenLabs
-│  (existing)         │
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ FreeSWITCH plays    │  endpoint.play(audioUrl)
-│ audio to caller     │
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  Hangup & Cleanup   │  State: COMPLETED
-└─────────────────────┘
-```
-
----
-
-## API Reference
+## Endpoints
 
 ### POST /api/outbound-call
 
 Initiate an outbound call.
 
 **Request:**
+
 ```json
 {
-  "to": "+15551234567",           // REQUIRED: E.164 phone number
-  "message": "Hello from server", // REQUIRED: Text to speak (max 1000 chars)
-  "mode": "announce",             // Optional: "announce" or "conversation" (default: announce)
-  "callerId": "+15559876543",     // Optional: Caller ID (defaults to DEFAULT_CALLER_ID env var)
-  "timeoutSeconds": 30,           // Optional: Ring timeout 5-120 (default: 30)
-  "webhookUrl": "https://..."     // Optional: POST status updates here
+  "to": "+15551234567",
+  "message": "Hello from your server",
+  "mode": "announce",
+  "device": "Morpheus",
+  "callerId": "+15559876543",
+  "timeoutSeconds": 30,
+  "webhookUrl": "https://example.com/webhook"
 }
 ```
 
-**Response (immediate):**
+| Field | Required | Description |
+|-------|----------|-------------|
+| `to` | Yes | Phone number in E.164 format |
+| `message` | Yes | Text to speak (max 1000 chars) |
+| `mode` | No | `announce` (default) or `conversation` |
+| `device` | No | Device name for voice/personality |
+| `callerId` | No | Caller ID to display |
+| `timeoutSeconds` | No | Ring timeout 5-120 (default: 30) |
+| `webhookUrl` | No | URL for status callbacks |
+
+**Response:**
+
 ```json
 {
   "success": true,
-  "callId": "abc-123-uuid",
+  "callId": "abc123-uuid",
   "status": "queued",
   "message": "Call initiated"
 }
 ```
-
-**States:**
-- `queued` - Call created, not yet dialing
-- `dialing` - SIP INVITE sent, waiting for answer
-- `playing` - Call answered, playing message
-- `completed` - Call finished successfully
-- `failed` - Call failed (busy/no_answer/error)
-
----
 
 ### GET /api/call/:callId
 
 Get status of a specific call.
 
 **Response:**
+
 ```json
 {
   "success": true,
-  "callId": "abc-123-uuid",
+  "callId": "abc123-uuid",
   "to": "+15551234567",
   "state": "completed",
   "mode": "announce",
-  "createdAt": "2025-12-19T12:00:00.000Z",
-  "answeredAt": "2025-12-19T12:00:05.234Z",
-  "endedAt": "2025-12-19T12:00:15.678Z",
+  "createdAt": "2025-01-01T12:00:00.000Z",
+  "answeredAt": "2025-01-01T12:00:05.234Z",
+  "endedAt": "2025-01-01T12:00:15.678Z",
   "duration": 10
 }
 ```
-
----
 
 ### GET /api/calls
 
 List all active calls.
 
 **Response:**
+
 ```json
 {
   "success": true,
   "count": 2,
   "calls": [
-    { "callId": "...", "to": "...", "state": "playing", ... },
-    { "callId": "...", "to": "...", "state": "dialing", ... }
+    { "callId": "...", "to": "...", "state": "playing" },
+    { "callId": "...", "to": "...", "state": "dialing" }
   ]
 }
 ```
 
----
-
 ### POST /api/call/:callId/hangup
 
-Manually hangup an active call.
+Manually hang up an active call.
 
 **Response:**
+
 ```json
 {
   "success": true,
   "message": "Call hangup initiated",
-  "callId": "abc-123-uuid"
+  "callId": "abc123-uuid"
 }
 ```
 
----
+## Call States
 
-## Environment Variables
+| State | Description |
+|-------|-------------|
+| `queued` | Call created, not yet dialing |
+| `dialing` | SIP INVITE sent, waiting for answer |
+| `playing` | Call answered, playing message |
+| `completed` | Call finished successfully |
+| `failed` | Call failed (busy, no answer, error) |
 
-Add to `.env`:
+## Call Modes
+
+### Announce Mode (Default)
+
+Plays the message and hangs up:
 
 ```bash
-# Outbound Calling
-SIP_TRUNK_HOST=10.70.7.50          # 3CX server IP
-DEFAULT_CALLER_ID=+15551234567     # Your registered phone number
-HTTP_PORT=3000                      # Should match existing setting
-```
-
----
-
-## Deployment Checklist
-
-- [ ] Copy files to server (see DEPLOYMENT.md)
-- [ ] Update .env with SIP_TRUNK_HOST and DEFAULT_CALLER_ID
-- [ ] Modify index.js to register routes (see INTEGRATION-EXAMPLE.js)
-- [ ] Restart Docker containers
-- [ ] Test with curl (see examples below)
-- [ ] Verify phone rings and message plays
-- [ ] Create n8n workflow for triggering calls
-
----
-
-## Testing
-
-### 1. Health Check
-```bash
-curl http://10.70.7.81:3000/api/calls
-```
-
-Expected: `{"success":true,"count":0,"calls":[]}`
-
-### 2. Make Test Call
-```bash
-curl -X POST http://10.70.7.81:3000/api/outbound-call \
+curl -X POST http://localhost:3000/api/outbound-call \
   -H "Content-Type: application/json" \
   -d '{
     "to": "+15551234567",
-    "message": "Hello from your server! This is a test call from the voice interface system."
+    "message": "Alert: Your server storage is at 95 percent."
   }'
 ```
 
-Expected: `{"success":true,"callId":"...","status":"queued",...}`
+### Conversation Mode
 
-### 3. Check Status
+Plays the message, then allows back-and-forth conversation:
+
 ```bash
-# Use callId from step 2
-curl http://10.70.7.81:3000/api/call/abc-123-uuid
+curl -X POST http://localhost:3000/api/outbound-call \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "+15551234567",
+    "message": "Alert: Your server storage is at 95 percent. Would you like me to clean up old logs?",
+    "mode": "conversation",
+    "device": "Morpheus"
+  }'
 ```
 
-Watch state progression: `queued` → `dialing` → `playing` → `completed`
+## Webhooks
 
----
+If `webhookUrl` is provided, POST requests are sent on state changes:
 
-## Integration Patterns
-
-### n8n Workflow: Server Alert
-
-```
-┌─────────────────────┐
-│ Home Assistant      │  Disk > 90%
-│ Webhook Trigger     │
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ n8n Function Node   │  Format message
-│                     │  "Alert: NAS storage at 95%"
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ HTTP Request Node   │  POST /api/outbound-call
-│                     │  to: Chuck's number
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│ Chuck's Phone Rings │  📞 THE GRAND PAYOFF
-└─────────────────────┘
-```
-
-### Claude Tool: "Call My Wife"
-
-When Chuck says via inbound call: "Call my wife and tell her I'll be late"
-
-```javascript
-// In Claude's tool definitions
+```json
 {
-  name: "make_outbound_call",
-  description: "Initiate an outbound phone call",
-  parameters: {
-    to: { type: "string", description: "Phone number to call" },
-    message: { type: "string", description: "Message to deliver" }
-  }
+  "callId": "abc123-uuid",
+  "state": "completed",
+  "to": "+15551234567",
+  "duration": 15,
+  "timestamp": "2025-01-01T12:00:15.678Z"
 }
-
-// Claude uses tool:
-await makeOutboundCall({
-  to: "+15559876543",  // Wife's number from contacts
-  message: "Hi! Chuck asked me to let you know he's running about 30 minutes late and will be home soon."
-});
 ```
 
----
+## Error Responses
 
-## What's NOT Implemented (Future)
-
-- **Conversation Mode** - Bidirectional conversation on outbound calls
-- **Authentication** - API key or IP whitelist
-- **Rate Limiting** - Prevent abuse
-- **Retry Logic** - Auto-retry on no answer
-- **Call Recording** - Save conversation transcripts
-- **DTMF Input** - Caller can press buttons to respond
-
-These can be added later if needed for the video.
-
----
-
-## Key Implementation Details
-
-### Early Offer Pattern
-
-Why we do this:
-1. Create FreeSWITCH endpoint FIRST to get local SDP
-2. Send SIP INVITE with our SDP already included
-3. When call is answered, connect endpoint with remote SDP
-
-This avoids the "late offer" problem and ensures media flow works correctly.
-
-```javascript
-// STEP 1: Get local SDP from FreeSWITCH
-const endpoint = await mediaServer.createEndpoint();
-const localSdp = endpoint.local.sdp;
-
-// STEP 2: Dial with our SDP
-const { uac } = await srf.createUAC(sipUri, { localSdp });
-
-// STEP 3: On answer, complete the connection
-await endpoint.modify(uac.remote.sdp);
+```json
+{
+  "success": false,
+  "error": "Invalid phone number format"
+}
 ```
 
-### State Machine
+| Error | Cause |
+|-------|-------|
+| `Invalid phone number format` | `to` not in E.164 format |
+| `Message is required` | Missing `message` field |
+| `Message too long` | Message exceeds 1000 chars |
+| `Call not found` | Invalid `callId` |
+| `service_unavailable` | SIP/media server not ready |
 
-Tracks call lifecycle:
+## Failure Reasons
 
+When a call fails, the `reason` field indicates why:
+
+| Reason | Description |
+|--------|-------------|
+| `busy` | Recipient busy (SIP 486) |
+| `no_answer` | No answer within timeout (SIP 480/408) |
+| `not_found` | Number not found (SIP 404) |
+| `rejected` | Call rejected (SIP 603) |
+| `service_unavailable` | Server error (SIP 503) |
+
+## Examples
+
+### Basic Alert
+
+```bash
+curl -X POST http://localhost:3000/api/outbound-call \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "+15551234567",
+    "message": "Your backup job completed successfully."
+  }'
 ```
-QUEUED ──┐
-         ├──> DIALING ──┬──> PLAYING ──> COMPLETED
-         │              │
-         └──────────────┴──> FAILED
+
+### With Webhook
+
+```bash
+curl -X POST http://localhost:3000/api/outbound-call \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "+15551234567",
+    "message": "Server alert: High CPU usage detected.",
+    "webhookUrl": "https://n8n.example.com/webhook/call-status"
+  }'
 ```
 
-Each state transition:
-- Logs to console
-- Emits event
-- Sends webhook (if configured)
+### Check Status
 
-### Error Handling
+```bash
+# Get call status
+curl http://localhost:3000/api/call/abc123-uuid
 
-Maps SIP error codes to friendly reasons:
-- 486 → `busy`
-- 480/408 → `no_answer`
-- 404 → `not_found`
-- 503 → `service_unavailable`
+# List all active calls
+curl http://localhost:3000/api/calls
+```
 
----
+## Integration Examples
 
-## Troubleshooting
+### Home Assistant
 
-### "service_unavailable" Response
+```yaml
+rest_command:
+  call_alert:
+    url: "http://VOICE_SERVER:3000/api/outbound-call"
+    method: POST
+    content_type: "application/json"
+    payload: '{"to": "+15551234567", "message": "{{ message }}"}'
+```
 
-**Cause:** srf or mediaServer not ready when route is called
+### n8n Workflow
 
-**Fix:** Ensure routes are registered AFTER both drachtio and FreeSWITCH connect
+1. Webhook trigger receives event
+2. HTTP Request node POSTs to `/api/outbound-call`
+3. Wait node pauses for call completion
+4. HTTP Request node checks status via `/api/call/:callId`
 
-### Call Connects but No Audio
+### Shell Script
 
-**Cause:** SDP negotiation failed or RTP ports blocked
+```bash
+#!/bin/bash
+PHONE="+15551234567"
+MESSAGE="Disk space critical on server1"
 
-**Fix:**
-1. Verify EXTERNAL_IP env var matches server IP
-2. Check FreeSWITCH logs for RTP errors
-3. Ensure host network mode is enabled in Docker
-
-### Phone Doesn't Ring
-
-**Cause:** SIP routing issue with 3CX
-
-**Fix:**
-1. Verify SIP_TRUNK_HOST points to 3CX
-2. Check 3CX outbound route configuration
-3. Verify DEFAULT_CALLER_ID is registered in 3CX
-
-### 404 on API Endpoint
-
-**Cause:** Routes not registered
-
-**Fix:** Check index.js integration - ensure `app.use('/api', outboundRouter)` is called
-
----
-
-## File Size Summary
-
-- **outbound-handler.js:** 242 lines, 7.8 KB
-- **outbound-session.js:** 251 lines, 8.2 KB
-- **outbound-routes.js:** 248 lines, 8.5 KB
-- **logger.js:** 29 lines, 0.7 KB
-
-**Total:** ~770 lines of clean, documented code
-
----
-
-## Next Steps
-
-1. **Deploy to sippycup** using DEPLOYMENT.md
-2. **Test basic calling** with curl
-3. **Create n8n workflow** for server alerts
-4. **Record the demo** - THE GRAND PAYOFF moment
-5. **Iterate if needed** - Add features for video
-
----
-
-## The Grand Payoff
-
-Once deployed, this enables the **mind-blowing moment** in the video:
-
-> Chuck is on camera, explaining the system. Suddenly, his phone rings. He answers.
->
-> Voice: "Alert: Your NAS storage is at 95 percent. The Plex media folder is using the most space."
->
-> Chuck looks at camera: "My SERVER just called ME."
-
-**This is what separates good tech content from LEGENDARY tech content.**
-
----
-
-*Implementation by Atlas (Principal Engineer)*
-*December 19, 2025*
-*Video 508 - Call Your Server - Voice Interface via 3CX*
+curl -s -X POST http://localhost:3000/api/outbound-call \
+  -H "Content-Type: application/json" \
+  -d "{\"to\": \"$PHONE\", \"message\": \"$MESSAGE\"}"
+```

@@ -6,8 +6,6 @@
 
 Voice interface for Claude Code via SIP/3CX. Call your AI, and your AI can call you.
 
-📺 **[Watch the Setup Tutorial](https://youtu.be/cT22fTzotYc)** - Complete walkthrough from start to finish
-
 ## What is this?
 
 Claude Phone gives your Claude Code installation a phone number. You can:
@@ -17,56 +15,60 @@ Claude Phone gives your Claude Code installation a phone number. You can:
 
 ## Prerequisites
 
-Before you begin, you'll need:
-
 | Requirement | Where to Get It | Notes |
 |-------------|-----------------|-------|
-| **3CX Cloud Account** | [3cx.com](https://www.3cx.com/) | Free tier works! The video walks through setup |
-| **ElevenLabs API Key** | [elevenlabs.io](https://elevenlabs.io/) | For text-to-speech voices |
+| **3CX Cloud Account** | [3cx.com](https://www.3cx.com/) | Free tier works |
+| **ElevenLabs API Key** | [elevenlabs.io](https://elevenlabs.io/) | For text-to-speech |
 | **OpenAI API Key** | [platform.openai.com](https://platform.openai.com/) | For Whisper speech-to-text |
 | **Claude Code CLI** | [claude.ai/code](https://claude.ai/code) | Requires Claude Max subscription |
-
-> **Note:** The [video tutorial](https://youtu.be/cT22fTzotYc) walks through getting each of these step-by-step.
 
 ## Platform Support
 
 | Platform | Status |
 |----------|--------|
-| **macOS** | ✅ Fully supported |
-| **Linux** | ✅ Fully supported (including Raspberry Pi) |
-| **Windows** | ❌ Not supported (may work with WSL, untested) |
+| **macOS** | Fully supported |
+| **Linux** | Fully supported (including Raspberry Pi) |
+| **Windows** | Not supported (may work with WSL) |
 
-## Architecture
+## Quick Start
 
-Claude Phone supports two deployment modes:
+### 1. Install
 
-### Split Mode (Recommended)
-
-Best for most users. Run voice services on a Raspberry Pi, Claude API on your main machine.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Your Phone                                                  │
-│      │                                                       │
-│      ↓ Call extension 9000                                  │
-│  ┌─────────────┐                                            │
-│  │     3CX     │  ← Cloud PBX                               │
-│  └──────┬──────┘                                            │
-│         │                                                    │
-│         ↓                                                    │
-│  ┌─────────────┐         ┌─────────────────────┐           │
-│  │ Raspberry Pi │   ←→   │ Mac/Linux with      │           │
-│  │ (voice-app)  │  HTTP  │ Claude Code CLI     │           │
-│  └─────────────┘         │ (claude-api-server) │           │
-│                          └─────────────────────┘           │
-└─────────────────────────────────────────────────────────────┘
+```bash
+curl -sSL https://raw.githubusercontent.com/theNetworkChuck/claude-phone/main/install.sh | bash
 ```
 
-**When to use:** You want to dedicate a Pi to voice services, or keep Claude running on your main workstation.
+The installer will:
+- Check for Node.js 18+, Docker, and git (offers to install if missing)
+- Clone the repository to `~/.claude-phone-cli`
+- Install dependencies
+- Create the `claude-phone` command
 
-### All-in-One Mode
+### 2. Setup
 
-Single machine runs everything. Simpler setup, requires one beefy server.
+```bash
+claude-phone setup
+```
+
+The setup wizard asks what you're installing:
+
+| Type | Use Case | What It Configures |
+|------|----------|-------------------|
+| **Voice Server** | Pi or dedicated voice box | Docker containers, connects to remote API server |
+| **API Server** | Mac/Linux with Claude Code | Just the Claude API wrapper |
+| **Both** | All-in-one single machine | Everything on one box |
+
+### 3. Start
+
+```bash
+claude-phone start
+```
+
+## Deployment Modes
+
+### All-in-One (Single Machine)
+
+Best for: Mac or Linux server that's always on and has Claude Code installed.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -88,72 +90,84 @@ Single machine runs everything. Simpler setup, requires one beefy server.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**When to use:** You have a Linux server or Mac that's always on and has Claude Code installed.
-
-## Quick Start
-
-### One-Line Install
-
+**Setup:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/theNetworkChuck/claude-phone/main/install.sh | bash
+claude-phone setup    # Select "Both"
+claude-phone start    # Launches Docker + API server
 ```
 
-### Setup & Run
+### Split Mode (Pi + API Server)
 
-```bash
-claude-phone setup    # Interactive configuration wizard
-claude-phone start    # Launch all services
+Best for: Dedicated Pi for voice services, Claude running on your main machine.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Your Phone                                                  │
+│      │                                                       │
+│      ↓ Call extension 9000                                  │
+│  ┌─────────────┐                                            │
+│  │     3CX     │  ← Cloud PBX                               │
+│  └──────┬──────┘                                            │
+│         │                                                    │
+│         ↓                                                    │
+│  ┌─────────────┐         ┌─────────────────────┐           │
+│  │ Raspberry Pi │   ←→   │ Mac/Linux with      │           │
+│  │ (voice-app)  │  HTTP  │ Claude Code CLI     │           │
+│  └─────────────┘         │ (claude-api-server) │           │
+│                          └─────────────────────┘           │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-The setup wizard auto-detects your environment (Pi vs desktop) and guides you through configuration.
+**On your Pi (Voice Server):**
+```bash
+claude-phone setup    # Select "Voice Server", enter API server IP when prompted
+claude-phone start    # Launches Docker containers
+```
 
-### For Split Deployments (Pi + API Server)
+**On your Mac/Linux (API Server):**
+```bash
+claude-phone api-server    # Starts Claude API wrapper on port 3333
+```
 
-1. **On your Pi:**
-   ```bash
-   claude-phone setup   # Select "Voice Server" when prompted
-   claude-phone start
-   ```
-
-2. **On your Mac/Linux with Claude Code:**
-   ```bash
-   claude-phone setup   # Select "API Server" when prompted
-   claude-phone api-server
-   ```
+Note: On the API server machine, you don't need to run `claude-phone setup` first - the `api-server` command works standalone.
 
 ## CLI Commands
 
 | Command | Description |
 |---------|-------------|
 | `claude-phone setup` | Interactive configuration wizard |
-| `claude-phone start` | Launch all services |
+| `claude-phone start` | Start services based on installation type |
 | `claude-phone stop` | Stop all services |
 | `claude-phone status` | Show service status |
-| `claude-phone doctor` | Health check for all services |
+| `claude-phone doctor` | Health check for dependencies and services |
+| `claude-phone api-server [--port N]` | Start API server standalone (default: 3333) |
 | `claude-phone device add` | Add a new device/extension |
 | `claude-phone device list` | List configured devices |
 | `claude-phone device remove <name>` | Remove a device |
-| `claude-phone logs [service]` | Tail service logs |
+| `claude-phone logs [service]` | Tail logs (voice-app, drachtio, freeswitch) |
 | `claude-phone config show` | Display configuration (secrets redacted) |
 | `claude-phone config path` | Show config file location |
-| `claude-phone config reset` | Reset configuration (creates backup) |
+| `claude-phone config reset` | Reset configuration |
 | `claude-phone backup` | Create configuration backup |
-| `claude-phone restore` | Restore from backup (interactive) |
-| `claude-phone update` | Self-update the CLI |
+| `claude-phone restore` | Restore from backup |
+| `claude-phone update` | Update Claude Phone |
 | `claude-phone uninstall` | Complete removal |
-| `claude-phone api-server [--port N]` | Start API server (split deployments) |
 
 ## Device Personalities
 
-Each extension can have its own identity (name, voice, personality prompt). This lets you create specialized AI assistants:
+Each SIP extension can have its own identity with a unique name, voice, and personality prompt:
 
+```bash
+claude-phone device add
+```
+
+Example devices:
 - **Morpheus** (ext 9000) - General assistant
 - **Cephanie** (ext 9002) - Storage monitoring bot
-- Add your own with `claude-phone device add`
 
 ## API Endpoints
 
-### Voice App (port 3000)
+The voice-app exposes these endpoints on port 3000:
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
@@ -163,64 +177,55 @@ Each extension can have its own identity (name, voice, personality prompt). This
 | POST | `/api/query` | Query a device programmatically |
 | GET | `/api/devices` | List configured devices |
 
-### Outbound Call Example
-
-```bash
-curl -X POST http://localhost:3000/api/outbound-call \
-  -H "Content-Type: application/json" \
-  -d '{
-    "to": "+15551234567",
-    "message": "Alert: Server storage is at 90%",
-    "mode": "conversation",
-    "device": "Morpheus"
-  }'
-```
+See [Outbound API Reference](voice-app/README-OUTBOUND.md) for details.
 
 ## Troubleshooting
 
 ### Quick Diagnostics
 
 ```bash
-claude-phone doctor   # Automated health checks
-claude-phone status   # Service status overview
+claude-phone doctor    # Automated health checks
+claude-phone status    # Service status
+claude-phone logs      # View logs
 ```
 
 ### Common Issues
 
 | Problem | Likely Cause | Solution |
 |---------|--------------|----------|
-| Calls connect but no audio | Wrong `EXTERNAL_IP` | Run `claude-phone setup` and verify IP |
+| Calls connect but no audio | Wrong external IP | Re-run `claude-phone setup`, verify LAN IP |
 | Extension not registering | 3CX SBC not running | Check 3CX admin panel |
-| API key validation failed | Billing not enabled | Add payment method to OpenAI/ElevenLabs |
 | "Sorry, something went wrong" | API server unreachable | Check `claude-phone status` |
+| Port conflict on startup | 3CX SBC using port 5060 | Setup auto-detects this; re-run setup |
 
-For detailed troubleshooting, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for more.
 
-The [video tutorial](https://youtu.be/cT22fTzotYc) also covers common setup issues.
+## Configuration
+
+Configuration is stored in `~/.claude-phone/config.json` with restricted permissions (chmod 600).
+
+```bash
+claude-phone config show    # View config (secrets redacted)
+claude-phone config path    # Show file location
+```
 
 ## Development
 
-### Running Tests
-
 ```bash
-npm test              # All tests
-npm run test:cli      # CLI tests only
-npm run test:voice-app # Voice app tests only
-```
+# Run tests
+npm test
 
-### Linting
-
-```bash
-npm run lint          # Check for issues
-npm run lint:fix      # Auto-fix issues
+# Lint
+npm run lint
+npm run lint:fix
 ```
 
 ## Documentation
 
-- [CLI Documentation](cli/README.md) - Detailed CLI usage
-- [Troubleshooting Guide](docs/TROUBLESHOOTING.md) - Common issues and solutions
-- [Outbound Calling](voice-app/README-OUTBOUND.md) - API reference for outbound calls
-- [Deployment Guide](voice-app/DEPLOYMENT.md) - Production deployment
+- [CLI Reference](cli/README.md) - Detailed CLI documentation
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
+- [Outbound API](voice-app/README-OUTBOUND.md) - Outbound calling API reference
+- [Deployment](voice-app/DEPLOYMENT.md) - Production deployment guide
 
 ## License
 

@@ -12,7 +12,7 @@ Claude Phone gives your Claude Code installation a phone number through 3CX PBX 
 
 | Component | Technology |
 |-----------|------------|
-| Language | Node.js (ES5-style, CommonJS) |
+| Language | Node.js (ES modules for CLI, CommonJS for voice-app) |
 | SIP Server | drachtio-srf |
 | Media Server | FreeSWITCH (via drachtio-fsmrf) |
 | STT | OpenAI Whisper API |
@@ -43,7 +43,7 @@ Claude Phone gives your Claude Code installation a phone number through 3CX PBX 
 │                       │ HTTP                                │
 │                       ↓                                      │
 │  ┌─────────────────────────────────────────────────┐       │
-│  │   claude-api-server (runs on API server with Claude)   │       │
+│  │   claude-api-server                              │       │
 │  │   Wraps Claude Code CLI with session management │       │
 │  └─────────────────────────────────────────────────┘       │
 └─────────────────────────────────────────────────────────────┘
@@ -61,44 +61,66 @@ claude-phone/
 ├── eslint.config.js          # ESLint configuration
 ├── docker-compose.yml        # Multi-container orchestration
 ├── .env.example              # Environment template
-├── .gitignore
-├── .claude/
-│   └── commands/             # Project slash commands (DevFlow)
-│       ├── feature.md        # /feature spec|start|ship
-│       ├── test.md           # /test
-│       ├── fix.md            # /fix [N]
-│       ├── issues.md         # /issues
-│       ├── investigate.md    # /investigate
-│       ├── project.md        # /project
-│       ├── batch.md          # /batch
-│       └── design.md         # /design
-├── .husky/                   # Git hooks (pre-commit)
-│   └── pre-commit            # Runs lint before commits
+│
+├── .claude/commands/         # DevFlow slash commands
+│   ├── feature.md            # /feature spec|start|ship
+│   ├── test.md               # /test
+│   ├── fix.md                # /fix [N]
+│   ├── issues.md             # /issues
+│   ├── investigate.md        # /investigate
+│   ├── project.md            # /project
+│   ├── batch.md              # /batch
+│   └── design.md             # /design
+│
 ├── cli/                      # Unified CLI tool
 │   ├── package.json
+│   ├── README.md
 │   ├── bin/
-│   │   └── claude-phone.js   # CLI entry point
+│   │   ├── claude-phone.js   # CLI entry point
+│   │   └── cli-main.js       # Command definitions
 │   ├── lib/
 │   │   ├── commands/         # Command implementations
 │   │   │   ├── setup.js      # Interactive setup wizard
-│   │   │   ├── start.js      # Start all services
-│   │   │   ├── stop.js       # Stop all services
-│   │   │   └── status.js     # Service status check
+│   │   │   ├── start.js      # Start services
+│   │   │   ├── stop.js       # Stop services
+│   │   │   ├── status.js     # Service status
+│   │   │   ├── doctor.js     # Health checks
+│   │   │   ├── api-server.js # Start API server standalone
+│   │   │   ├── logs.js       # Tail service logs
+│   │   │   ├── backup.js     # Create backups
+│   │   │   ├── restore.js    # Restore backups
+│   │   │   ├── update.js     # Self-update
+│   │   │   ├── uninstall.js  # Clean removal
+│   │   │   ├── config/       # Config subcommands
+│   │   │   │   ├── show.js
+│   │   │   │   ├── path.js
+│   │   │   │   └── reset.js
+│   │   │   └── device/       # Device subcommands
+│   │   │       ├── add.js
+│   │   │       ├── list.js
+│   │   │       └── remove.js
 │   │   ├── config.js         # Config read/write
 │   │   ├── docker.js         # Docker compose wrapper
-│   │   ├── process-manager.js # PID-based process management
-│   │   ├── validators.js     # API key validation
-│   │   └── utils.js          # Shared utilities
+│   │   ├── network.js        # Network utilities
+│   │   ├── platform.js       # Platform detection
+│   │   ├── port-check.js     # Port availability checks
+│   │   ├── prereqs.js        # Prerequisite checks
+│   │   ├── prerequisites.js  # Pi-specific prereqs
+│   │   ├── process-manager.js# PID-based process management
+│   │   ├── utils.js          # Shared utilities
+│   │   └── validators.js     # API key validation
 │   └── test/                 # Test suite
+│
 ├── voice-app/                # Docker container for voice handling
 │   ├── Dockerfile
 │   ├── package.json
-│   ├── index.js              # Main entry point (v9)
+│   ├── index.js              # Main entry point
 │   ├── config/
 │   │   └── devices.json      # Device configurations
 │   ├── lib/
 │   │   ├── audio-fork.js     # WebSocket audio streaming
 │   │   ├── claude-bridge.js  # HTTP client for Claude API
+│   │   ├── connection-retry.js # Connection retry logic
 │   │   ├── conversation-loop.js  # Core conversation flow
 │   │   ├── device-registry.js    # Multi-device management
 │   │   ├── http-server.js    # Express server for audio/API
@@ -113,120 +135,62 @@ claude-phone/
 │   │   ├── tts-service.js    # ElevenLabs TTS
 │   │   └── whisper-client.js # OpenAI Whisper STT
 │   ├── DEPLOYMENT.md         # Production deployment guide
-│   ├── README-OUTBOUND.md    # Outbound calling docs
+│   ├── README-OUTBOUND.md    # Outbound calling API docs
 │   └── API-QUERY-CONTRACT.md # Query API specification
-└── claude-api-server/        # HTTP wrapper for Claude CLI
-    ├── package.json
-    ├── server.js             # Express server
-    └── structured.js         # JSON validation helpers
+│
+├── claude-api-server/        # HTTP wrapper for Claude CLI
+│   ├── package.json
+│   ├── server.js             # Express server
+│   └── structured.js         # JSON validation helpers
+│
+├── docs/
+│   └── TROUBLESHOOTING.md    # Troubleshooting guide
+│
+└── src/features/             # DevFlow feature specs (planning docs)
+    └── */SPEC.md, PLAN.md, TASKS.md
 ```
 
-## Key Commands
-
-### Unified CLI (Recommended)
+## CLI Commands
 
 ```bash
 # One-line install
 curl -sSL https://raw.githubusercontent.com/theNetworkChuck/claude-phone/main/install.sh | bash
 
-# Setup (run once)
-claude-phone setup
-
-# Start all services
-claude-phone start
-
-# Stop all services
-claude-phone stop
-
-# Check status
-claude-phone status
+# Setup and run
+claude-phone setup    # Interactive configuration
+claude-phone start    # Launch services
+claude-phone stop     # Stop services
+claude-phone status   # Check status
+claude-phone doctor   # Health checks
 ```
 
-### Manual Commands (Legacy)
-
-```bash
-# Start voice-app (Docker)
-docker compose up -d
-
-# View logs
-docker compose logs -f voice-app
-
-# Start claude-api-server (on API server with Claude Code)
-cd claude-api-server && node server.js
-
-# Test outbound call
-curl -X POST http://localhost:3000/api/outbound-call \
-  -H "Content-Type: application/json" \
-  -d '{"to": "+15551234567", "message": "Test alert", "device": "Morpheus"}'
-
-# Check call status
-curl http://localhost:3000/api/calls
-```
-
-## Development Workflow
-
-This project follows **DevFlow 2.0** methodology. See [CONSTITUTION.md](./CONSTITUTION.md) for full development principles.
-
-### Slash Commands (DevFlow)
-
-These commands are defined in `.claude/commands/` and route to DevFlow workflows.
-
-| Command | Purpose |
-|---------|---------|
-| `/feature spec [name]` | Create feature spec (SPEC.md, PLAN.md, TASKS.md) |
-| `/feature start [name]` | Build a feature with TDD |
-| `/feature ship` | Run checks, review, merge to main |
-| `/test` | Run all project tests (auto-detects runner) |
-| `/test --coverage` | Run tests with coverage report |
-| `/fix [N]` | Fix GitHub issue #N with TDD |
-| `/issues` | Create or list GitHub issues |
-| `/issues work [N]` | Start working on issue #N |
-| `/investigate [problem]` | Debug/troubleshoot without changing code |
-| `/project` | Show project info and management |
-| `/batch` | Work through multiple issues |
-| `/design` | Visual design workflow |
-
-**Natural language also works:**
-- "spec feature auth" → `/feature spec auth`
-- "build auth" → `/feature start auth`
-- "ship it" → `/feature ship`
-- "run tests" → `/test`
+## Development
 
 ### Running Tests
 
 ```bash
-# Run all tests
-npm test
-
-# Run CLI tests only
-npm run test:cli
-
-# Run voice-app tests only
-npm run test:voice-app
-```
-
-### Git Hooks
-
-Pre-commit hook runs automatically:
-```bash
-npm run precommit  # Runs ESLint on all JS files
+npm test              # All tests
+npm run test:cli      # CLI tests only
+npm run test:voice-app # Voice app tests only
 ```
 
 ### Linting
 
 ```bash
-# Lint entire project
-npm run lint
-
-# Lint with auto-fix
-npm run lint:fix
-
-# Lint specific directory
-npm run lint:voice-app
-npm run lint:api-server
+npm run lint          # Check for issues
+npm run lint:fix      # Auto-fix issues
 ```
 
-ESLint is configured for ES5-style CommonJS JavaScript. Rules focus on catching bugs (undefined vars, redeclarations) while being lenient on style (quotes, indentation) to match existing code.
+### DevFlow Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/feature spec [name]` | Create feature spec |
+| `/feature start [name]` | Build with TDD |
+| `/feature ship` | Review and merge |
+| `/test` | Run tests |
+| `/fix [N]` | Fix GitHub issue #N |
+| `/investigate [problem]` | Debug without changing code |
 
 ## API Endpoints
 
@@ -234,143 +198,49 @@ ESLint is configured for ES5-style CommonJS JavaScript. Rules focus on catching 
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| POST | `/api/outbound-call` | Initiate an outbound call |
+| POST | `/api/outbound-call` | Initiate outbound call |
 | GET | `/api/call/:callId` | Get call status |
 | GET | `/api/calls` | List active calls |
-| POST | `/api/query` | Query a device programmatically |
+| POST | `/api/query` | Query device programmatically |
 | GET | `/api/devices` | List configured devices |
 
 ### Claude API Server (port 3333)
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| POST | `/ask` | Send prompt to Claude (voice) |
-| POST | `/ask-structured` | Send prompt, return validated JSON |
-| POST | `/end-session` | Clean up call session |
+| POST | `/ask` | Send prompt to Claude |
+| POST | `/ask-structured` | Send prompt, return JSON |
+| POST | `/end-session` | Clean up session |
 | GET | `/health` | Health check |
 
-## Conversation Flow
+## Key Design Decisions
 
-1. **Ready Beep** - Signal "your turn to speak"
-2. **VAD Detection** - Wait for speech (or DTMF # to send early)
-3. **Got-it Beep** - Signal "I heard you, processing"
-4. **Whisper Transcription** - STT via OpenAI
-5. **Thinking Phrase** - Random feedback ("Pondering...", "Cogitating...")
-6. **Hold Music** - Background audio during Claude processing
-7. **Claude Query** - Send to Claude API with session context
-8. **TTS Response** - ElevenLabs voices the response
-9. **Repeat** - Loop until goodbye or max turns
-
-## Device Personalities
-
-Each SIP extension can have its own identity:
-
-| Device | Extension | Purpose |
-|--------|-----------|---------|
-| Morpheus | 9000 | General assistant (default) |
-| Cephanie | 9002 | Storage monitoring bot |
-
-Configured in `voice-app/config/devices.json`:
-```json
-{
-  "9002": {
-    "name": "Cephanie",
-    "extension": "9002",
-    "authId": "xxx",
-    "password": "xxx",
-    "voiceId": "ElevenLabs-voice-id",
-    "prompt": "You are Cephanie, the Ceph storage monitoring AI..."
-  }
-}
-```
-
-## Voice Response Format
-
-Claude responses must include for voice:
-
-```
-🗣️ VOICE_RESPONSE: [Conversational answer, 40 words max - spoken via TTS]
-🎯 COMPLETED: [Status summary, 12 words max - for logging]
-```
-
-The VOICE_CONTEXT prompt in `claude-api-server/server.js` enforces this format.
+1. **CommonJS for voice-app** - Compatibility with drachtio ecosystem
+2. **ES Modules for CLI** - Modern Node.js tooling
+3. **Host networking mode** - Required for FreeSWITCH RTP
+4. **Separate claude-api-server** - Runs where Claude Code CLI is installed
+5. **Session-per-call** - Each call gets Claude session for multi-turn context
+6. **RTP ports 30000-30100** - Avoids conflict with 3CX SBC (uses 20000-20099)
+7. **Config in ~/.claude-phone** - User config separate from codebase
 
 ## Environment Variables
 
-Critical variables (see `.env.example`):
+See `.env.example` for all variables. Key ones:
 
 | Variable | Purpose |
 |----------|---------|
-| `EXTERNAL_IP` | Server LAN IP (for RTP audio routing) |
+| `EXTERNAL_IP` | Server LAN IP for RTP routing |
 | `CLAUDE_API_URL` | URL to claude-api-server |
 | `ELEVENLABS_API_KEY` | TTS API key |
 | `OPENAI_API_KEY` | Whisper STT API key |
 | `SIP_DOMAIN` | 3CX server FQDN |
-| `SIP_REGISTRAR` | 3CX SIP registrar (same as domain for SBC mode) |
+| `SIP_REGISTRAR` | SIP registrar address |
 
-## Current Phase
+## Documentation
 
-**Production Ready** - All core features complete:
-- [x] Inbound calls with VAD, Whisper, Claude, ElevenLabs
-- [x] Outbound calls with conversation mode
-- [x] Multi-device support with per-device voices/prompts
-- [x] Query API for programmatic access
-- [x] Session management for multi-turn conversations
-- [x] Hold music and audio cues
-- [x] Unified CLI installer (Complete - Phases 1-4)
-  - [x] `claude-phone setup` - Interactive configuration wizard
-  - [x] `claude-phone start` - Launch all services
-  - [x] `claude-phone stop` - Stop all services
-  - [x] `claude-phone status` - Service status check
-  - [x] `claude-phone doctor` - Health check for all services
-  - [x] `claude-phone device add/list/remove` - Device management
-  - [x] `claude-phone logs [service]` - Tail service logs
-  - [x] `claude-phone update` - Self-update CLI
-  - [x] `claude-phone config show/path/reset` - Configuration management
-  - [x] `claude-phone backup/restore` - Configuration backup/restore
-  - [x] `claude-phone uninstall` - Clean removal
-  - [x] One-line install script (macOS + Linux)
-  - [x] API key validation (ElevenLabs, OpenAI)
-  - [x] Process management with PID files
-  - [x] Docker compose wrapper
-
-## Key Decisions
-
-1. **ES5-style CommonJS** - Compatibility with drachtio ecosystem (voice-app, claude-api-server)
-2. **ES Modules for CLI** - Modern Node.js for CLI tool (separate from voice-app)
-3. **Host networking mode** - Required for FreeSWITCH RTP to reach 3CX
-4. **Separate claude-api-server** - Runs on a server with Claude Code CLI (needs Claude Max subscription)
-5. **Session-per-call** - Each call gets a Claude session for multi-turn context
-6. **VAD + DTMF #** - Dual input methods (voice activity detection + manual send)
-7. **Config in ~/.claude-phone** - User config separate from codebase (chmod 600 for secrets)
-
-## Known Issues
-
-### RTP Port Conflict with 3CX SBC (Fixed)
-
-**Symptom:** Calls connect but FreeSWITCH returns 488 "INCOMPATIBLE_DESTINATION" error. Logs show `AUDIO RTP REPORTS ERROR: [Bind Error! IP:port]`.
-
-**Cause:** 3CX SBC uses RTP ports 20000-20099 by default. If FreeSWITCH is configured to use the same range, it can't bind ports and rejects calls.
-
-**Fix:** FreeSWITCH must use a non-conflicting RTP range. The CLI template and main docker-compose.yml use 30000-30100.
-
-**Manual fix for existing deployments:**
-```bash
-# Edit docker-compose.yml
-sed -i 's/--rtp-range-start 20000/--rtp-range-start 30000/' ~/.claude-phone/docker-compose.yml
-sed -i 's/--rtp-range-end 20100/--rtp-range-end 30100/' ~/.claude-phone/docker-compose.yml
-
-# Recreate FreeSWITCH container
-cd ~/.claude-phone && docker-compose up -d --force-recreate freeswitch
-docker-compose restart voice-app
-```
-
-## Future Enhancements
-
-Potential future features (not currently planned):
-
-- [ ] Webhook notifications for call events
-- [ ] Call recording and transcripts
-- [ ] Multiple language support
-- [ ] Custom wake words
-- [ ] Integration with calendar/reminders
+- [README.md](README.md) - User quickstart
+- [cli/README.md](cli/README.md) - CLI reference
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues
+- [voice-app/DEPLOYMENT.md](voice-app/DEPLOYMENT.md) - Production deployment
+- [voice-app/README-OUTBOUND.md](voice-app/README-OUTBOUND.md) - Outbound API
+- [CONSTITUTION.md](CONSTITUTION.md) - DevFlow principles
