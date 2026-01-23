@@ -41,10 +41,10 @@ export async function deviceAddCommand() {
     {
       type: 'input',
       name: 'extension',
-      message: 'SIP extension (4-6 digits):',
+      message: 'SIP extension (4-5 digits):',
       validate: (input) => {
         if (!validateExtension(input)) {
-          return 'Extension must be 4-6 digits';
+          return 'Extension must be 4-5 digits';
         }
         // Check for duplicate extensions
         const duplicate = config.devices.find(d => d.extension === input);

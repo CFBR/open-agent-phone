@@ -1,6 +1,6 @@
 # Claude Phone CLI
 
-Unified command-line interface for Claude Phone. Transform multi-component manual setup into single-command simplicity.
+Unified command-line interface for Claude Phone. Single-command setup and management.
 
 ## Installation
 
@@ -12,107 +12,136 @@ curl -sSL https://raw.githubusercontent.com/networkchuck/claude-phone/main/insta
 
 ### Manual Install
 
-1. Clone the repository:
 ```bash
 git clone https://github.com/networkchuck/claude-phone.git
-cd claude-phone
-```
-
-2. Install CLI dependencies:
-```bash
-cd cli
+cd claude-phone/cli
 npm install
-```
-
-3. Link the CLI:
-```bash
 npm link
 ```
 
-## Usage
+## Installation Types
 
-### Setup (First Time)
+The setup wizard supports three installation types:
 
-Run the interactive setup wizard to configure API keys, 3CX settings, and your first device:
+| Type | Use Case | What Runs |
+|------|----------|-----------|
+| **Voice Server** | Raspberry Pi or dedicated voice box | Docker containers (drachtio, freeswitch, voice-app) |
+| **API Server** | Mac/Linux with Claude Code CLI | claude-api-server only |
+| **Both** | All-in-one on single machine | Everything |
+
+## Commands
+
+### Setup & Configuration
+
+```bash
+claude-phone setup [--skip-prereqs]   # Interactive configuration wizard
+claude-phone config show              # Display configuration (secrets redacted)
+claude-phone config path              # Show config file location
+claude-phone config reset             # Reset configuration (creates backup)
+```
+
+### Service Management
+
+```bash
+claude-phone start                    # Launch all services
+claude-phone stop                     # Stop all services
+claude-phone status                   # Show service status
+claude-phone doctor                   # Health check for all services
+claude-phone logs [service]           # Tail logs (voice-app, drachtio, freeswitch)
+```
+
+### Device Management
+
+```bash
+claude-phone device add               # Add a new device/extension
+claude-phone device list              # List configured devices
+claude-phone device remove            # Remove a device
+```
+
+### Backup & Recovery
+
+```bash
+claude-phone backup                   # Create timestamped configuration backup
+claude-phone restore [file]           # Restore configuration from backup
+```
+
+### Maintenance
+
+```bash
+claude-phone update                   # Self-update the CLI
+claude-phone uninstall                # Complete removal of Claude Phone
+```
+
+### Split Deployment
+
+```bash
+claude-phone api-server [--port N]    # Start Claude API server (for split deployments)
+```
+
+## Usage Examples
+
+### First Time Setup
 
 ```bash
 claude-phone setup
 ```
 
 The wizard will:
-1. Validate your ElevenLabs API key
-2. Validate your OpenAI API key
-3. Configure your 3CX SIP settings
-4. Set up your first device (extension, voice, prompt)
-5. Configure server settings (ports, IP)
+1. Check prerequisites (Node.js, Docker, etc.)
+2. Ask for installation type (Voice Server, API Server, or Both)
+3. Validate your API keys (ElevenLabs, OpenAI)
+4. Configure 3CX SIP settings
+5. Set up your first device (extension, voice, prompt)
+6. Configure network settings (IP, ports)
 
-Configuration is saved to `~/.claude-phone/config.json` (chmod 600).
-
-### Start Services
-
-Launch all services (Docker containers + claude-api-server):
+### Adding Multiple Devices
 
 ```bash
-claude-phone start
+claude-phone device add
 ```
 
-This will:
-1. Check Docker is installed and running
-2. Generate Docker compose config from your settings
-3. Write device configurations to voice-app
-4. Start drachtio, freeswitch, and voice-app containers
-5. Start claude-api-server as a background process
+Each device gets its own:
+- SIP extension (from 3CX)
+- ElevenLabs voice
+- System prompt/personality
 
-### Stop Services
-
-Shut down all services cleanly:
+### Checking Service Health
 
 ```bash
-claude-phone stop
+claude-phone doctor
 ```
 
-This will:
-1. Stop claude-api-server (SIGTERM, then SIGKILL if needed)
-2. Stop all Docker containers
+Runs comprehensive health checks:
+- Docker daemon running
+- All containers healthy
+- API server responding
+- Network connectivity
+- SIP registration status
 
-### Check Status
-
-See what's running:
+### Viewing Logs
 
 ```bash
-claude-phone status
+claude-phone logs                     # All services
+claude-phone logs voice-app           # Voice app only
+claude-phone logs drachtio            # SIP server only
+claude-phone logs freeswitch          # Media server only
 ```
-
-Shows:
-- Claude API server status (running/stopped, PID, port)
-- Docker container status (drachtio, freeswitch, voice-app)
-- Configured devices
-- Network settings
-
-### Update Configuration
-
-Re-run setup to update your configuration:
-
-```bash
-claude-phone setup
-```
-
-Existing values will be shown as defaults.
 
 ## Configuration
 
-Configuration is stored in `~/.claude-phone/config.json`:
+Configuration is stored in `~/.claude-phone/config.json` (chmod 600):
 
 ```json
 {
   "version": "1.0.0",
+  "installationType": "both",
   "api": {
     "elevenlabs": { "apiKey": "...", "validated": true },
     "openai": { "apiKey": "...", "validated": true }
   },
   "sip": {
     "domain": "your-3cx.3cx.us",
-    "registrar": "192.168.1.100",
+    "registrar": "your-3cx.3cx.us",
     "transport": "udp"
   },
   "server": {
@@ -127,13 +156,48 @@ Configuration is stored in `~/.claude-phone/config.json`:
     "password": "***",
     "voiceId": "elevenlabs-voice-id",
     "prompt": "You are Morpheus..."
-  }],
-  "paths": {
-    "voiceApp": "/path/to/voice-app",
-    "claudeApiServer": "/path/to/claude-api-server"
-  }
+  }]
 }
 ```
+
+## Architecture
+
+```
+claude-phone (CLI)
+├── setup        → Interactive wizard, validates API keys, prereq checks
+├── start        → Generates configs, starts Docker + API server
+├── stop         → Stops all services cleanly
+├── status       → Shows what's running
+├── doctor       → Comprehensive health checks
+├── device       → Add/list/remove SIP devices
+│   ├── add
+│   ├── list
+│   └── remove
+├── logs         → Tail service logs
+├── config       → Configuration management
+│   ├── show
+│   ├── path
+│   └── reset
+├── backup       → Create configuration backup
+├── restore      → Restore from backup
+├── update       → Self-update CLI
+├── uninstall    → Complete removal
+└── api-server   → Start API server (split mode)
+
+Manages:
+├── ~/.claude-phone/config.json        (user config)
+├── ~/.claude-phone/docker-compose.yml (generated)
+├── ~/.claude-phone/.env               (generated)
+├── ~/.claude-phone/server.pid         (process tracking)
+└── ~/.claude-phone/backups/           (configuration backups)
+```
+
+## Requirements
+
+- macOS or Linux (including Raspberry Pi)
+- Node.js 18+
+- Docker (for Voice Server or Both modes)
+- Claude Code CLI (for API Server or Both modes)
 
 ## Development
 
@@ -143,59 +207,11 @@ Configuration is stored in `~/.claude-phone/config.json`:
 npm test
 ```
 
-Tests cover:
-- Config read/write with proper permissions
-- Process management (PID files, start/stop)
-- API key validation
-- Docker operations
-
 ### Lint Code
 
 ```bash
 npm run lint
 ```
-
-## Architecture
-
-The CLI wraps existing components:
-
-```
-claude-phone (CLI)
-├─> setup     → Interactive wizard, validates API keys
-├─> start     → Generates configs, starts Docker + server
-├─> stop      → Stops all services cleanly
-└─> status    → Shows what's running
-
-Manages:
-├─> ~/.claude-phone/config.json       (user config)
-├─> ~/.claude-phone/docker-compose.yml (generated)
-├─> ~/.claude-phone/.env               (generated)
-└─> ~/.claude-phone/server.pid         (process tracking)
-
-Launches:
-├─> Docker containers (drachtio, freeswitch, voice-app)
-└─> claude-api-server (background process, detached)
-```
-
-## Requirements
-
-- macOS or Linux
-- Node.js 18+
-- Docker Desktop
-- Claude CLI (for claude-api-server)
-
-## Future Enhancements (Phase 2+)
-
-- [ ] `claude-phone devices add` - Add additional devices
-- [ ] `claude-phone devices list` - List configured devices
-- [ ] `claude-phone devices remove` - Remove device
-- [ ] `claude-phone logs` - Tail logs from all services
-- [ ] `claude-phone restart` - Restart services
-- [ ] `claude-phone test call` - Make a test outbound call
-- [ ] Linux support
-- [ ] Auto-update mechanism
-- [ ] Health checks for all services
-- [ ] Webhook notifications
 
 ## License
 

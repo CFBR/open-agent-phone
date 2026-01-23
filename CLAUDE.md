@@ -367,51 +367,8 @@ docker-compose restart voice-app
 
 ## Future Enhancements
 
-**CLI Phase 3:** ✅ COMPLETE
-- [x] `claude-phone update` - Self-update CLI
-- [x] `claude-phone config show` - Display configuration (redacted secrets)
-- [x] `claude-phone config path` - Show config file location
-- [x] `claude-phone config reset` - Reset configuration with backup
+Potential future features (not currently planned):
 
-**CLI Phase 4:** ✅ COMPLETE
-- [x] `claude-phone backup` - Create timestamped configuration backups
-- [x] `claude-phone restore` - Restore configuration from backup
-- [x] `claude-phone uninstall` - Clean removal of entire installation
-
-**Raspberry Pi Deployment:** ✅ COMPLETE (PR #9)
-- [x] `claude-phone setup` detects Pi and enters split-mode setup
-- [x] `claude-phone api-server` command for API server
-- [x] 3CX SBC detection (auto-configures port 5070 if detected)
-- [x] API server IP validation with reachability checks
-- [x] Enhanced `status` and `doctor` for Pi ↔ API server connectivity
-- [x] Graceful error handling when API server unreachable during calls
-
-**SBC Simplified Installer:** ✅ COMPLETE
-- [x] Pi mode uses simplified `setupSBC()` (single FQDN question)
-- [x] Removed confusing "registrar IP" question from Pi setup
-- [x] SBC-everywhere model works for both cloud and on-prem 3CX
-- [x] Standard mode unchanged (backward compatible)
-
-**Prerequisite Checks with Auto-Fix:** ✅ COMPLETE
-- [x] Pre-flight checks run before setup prompts (Node.js, Docker, Compose, disk, network)
-- [x] Platform detection (OS, distro, architecture, package manager)
-- [x] Secure auto-fix with script preview and double confirmation
-- [x] Platform-specific installers (apt, dnf, pacman, brew)
-- [x] Docker Desktop flow for macOS with wait-for-daemon
-- [x] Rollback support with state tracking
-- [x] `--skip-prereqs` flag for advanced users
-- [x] Offline mode graceful degradation
-
-**Installation Type Selector:** ✅ COMPLETE
-- [x] Type prompt: Voice Server, API Server, or Both
-- [x] Voice Server: SIP config, remote API server, API keys, devices
-- [x] API Server: Minimal setup, only port configuration
-- [x] Both: Full stack on one machine (default, backward compatible)
-- [x] Type-specific prereq checks (API Server skips Docker)
-- [x] Start/stop/status/doctor commands respect installation type
-- [x] Re-running setup shows current type as default
-
-**Other:**
 - [ ] Webhook notifications for call events
 - [ ] Call recording and transcripts
 - [ ] Multiple language support
