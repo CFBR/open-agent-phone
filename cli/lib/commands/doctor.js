@@ -5,7 +5,7 @@ import axios from 'axios';
 import { loadConfig, configExists, getInstallationType } from '../config.js';
 import { checkDocker, getContainerStatus } from '../docker.js';
 import { isServerRunning, getServerPid } from '../process-manager.js';
-import { validateElevenLabsKey, validateOpenAIKey } from '../validators.js';
+import { validateElevenLabsKey, validateOpenRouterKey } from '../validators.js';
 import { isReachable, checkClaudeApiServer as checkClaudeApiHealth } from '../network.js';
 import { checkPort } from '../port-check.js';
 
@@ -72,13 +72,13 @@ async function checkElevenLabsAPI(apiKey) {
 }
 
 /**
- * Check OpenAI API connectivity
- * @param {string} apiKey - OpenAI API key
+ * Check OpenRouter API connectivity
+ * @param {string} apiKey - OpenRouter API key
  * @returns {Promise<{connected: boolean, error?: string}>}
  */
-async function checkOpenAIAPI(apiKey) {
+async function checkOpenRouterAPI(apiKey) {
   try {
-    const result = await validateOpenAIKey(apiKey);
+    const result = await validateOpenRouterKey(apiKey);
     if (result.valid) {
       return { connected: true };
     } else {
@@ -297,18 +297,18 @@ async function runVoiceServerChecks(config, isPiSplit) {
     checks.push({ name: 'ElevenLabs API', passed: elevenLabsResult.connected });
   }
 
-  // Check OpenAI API (only if configured)
-  if (config.api && config.api.openai && config.api.openai.apiKey) {
-    const openAISpinner = ora('Checking OpenAI API...').start();
-    const openAIResult = await checkOpenAIAPI(config.api.openai.apiKey);
-    if (openAIResult.connected) {
-      openAISpinner.succeed(chalk.green('OpenAI API connected'));
+  // Check OpenRouter API (only if configured)
+  if (config.api && config.api.openrouter && config.api.openrouter.apiKey) {
+    const openRouterSpinner = ora('Checking OpenRouter API...').start();
+    const openRouterResult = await checkOpenRouterAPI(config.api.openrouter.apiKey);
+    if (openRouterResult.connected) {
+      openRouterSpinner.succeed(chalk.green('OpenRouter API connected'));
       passedCount++;
     } else {
-      openAISpinner.fail(chalk.red(`OpenAI API failed: ${openAIResult.error}`));
+      openRouterSpinner.fail(chalk.red(`OpenRouter API failed: ${openRouterResult.error}`));
       console.log(chalk.gray('  → Check your API key in ~/.claude-phone/config.json\n'));
     }
-    checks.push({ name: 'OpenAI API', passed: openAIResult.connected });
+    checks.push({ name: 'OpenRouter API', passed: openRouterResult.connected });
   }
 
   // Check Voice-app container

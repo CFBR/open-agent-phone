@@ -40,8 +40,8 @@ export async function configShowCommand() {
 
   // API Keys
   console.log(chalk.bold('API Keys:'));
-  console.log(chalk.gray(`  OpenAI API Key: ${redactValue(config.apiKeys.openai)}`));
-  console.log(chalk.gray(`  ElevenLabs API Key: ${redactValue(config.apiKeys.elevenlabs)}`));
+  console.log(chalk.gray(`  OpenRouter API Key: ${redactValue(config.api.openrouter.apiKey)}`));
+  console.log(chalk.gray(`  ElevenLabs API Key: ${redactValue(config.api.elevenlabs.apiKey)}`));
 
   // 3CX Configuration
   console.log(chalk.bold('\n3CX Configuration:'));

@@ -35,7 +35,7 @@ Select this when setting up a Raspberry Pi or dedicated voice box that connects 
 1. 3CX SIP domain and registrar
 2. API server IP and port (where claude-api-server runs)
 3. ElevenLabs API key and default voice ID
-4. OpenAI API key (for Whisper STT)
+4. OpenRouter API key (for Whisper STT)
 5. Device configuration (name, extension, auth, voice, prompt)
 6. Server LAN IP (for RTP audio routing)
 
@@ -61,7 +61,7 @@ Select this for a single machine running everything.
 
 **What it asks for:**
 1. ElevenLabs API key and default voice ID
-2. OpenAI API key
+2. OpenRouter API key
 3. 3CX SIP domain and registrar
 4. Device configuration
 5. Server LAN IP, API port, and HTTP port

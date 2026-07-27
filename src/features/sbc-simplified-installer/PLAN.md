@@ -109,7 +109,7 @@ This is a CLI tool without a formal test suite. Verification is manual:
 ### What NOT to Test
 
 - 3CX SBC provisioning (manual, out of scope)
-- ElevenLabs/OpenAI API validation (unchanged)
+- ElevenLabs/OpenRouter API validation (unchanged)
 
 ## Implementation Notes
 

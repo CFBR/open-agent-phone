@@ -49,14 +49,14 @@ Currently, `claude-phone setup` always asks all questions, which is confusing wh
 - [ ] Ask: 3CX FQDN (SBC mode)
 - [ ] Ask: API server IP address
 - [ ] Ask: ElevenLabs API key
-- [ ] Ask: OpenAI API key
+- [ ] Ask: OpenRouter API key
 - [ ] Ask: Device configuration (extension, voice, prompt)
 - [ ] Generate Docker config and .env
 - [ ] Don't create/manage claude-api-server
 
 ### AC3: API Server Flow
 - [ ] Skip SIP/3CX configuration
-- [ ] Skip ElevenLabs/OpenAI keys
+- [ ] Skip ElevenLabs/OpenRouter keys
 - [ ] Skip device configuration
 - [ ] Ask: API server port (default 3333)
 - [ ] Only configure claude-api-server

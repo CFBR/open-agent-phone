@@ -1,5 +1,6 @@
 /**
- * OpenAI Whisper API Client for Speech-to-Text
+ * OpenRouter Whisper API Client for Speech-to-Text
+ * Uses OpenRouter's OpenAI-compatible endpoint for Whisper
  * Converts audio buffers (L16 PCM from FreeSWITCH) to text
  */
 
@@ -8,17 +9,22 @@ const WaveFile = require("wavefile").WaveFile;
 const fs = require("fs");
 const path = require("path");
 
-// Lazy-initialized OpenAI client
+// Lazy-initialized OpenRouter client
 let openai = null;
 
 function getOpenAIClient() {
   if (!openai) {
-    if (!process.env.OPENAI_API_KEY) {
-      console.warn("[WHISPER] OPENAI_API_KEY not set - STT will not work");
+    if (!process.env.OPENROUTER_API_KEY) {
+      console.warn("[WHISPER] OPENROUTER_API_KEY not set - STT will not work");
       return null;
     }
     openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
+      baseURL: "https://openrouter.ai/api/v1",
+      apiKey: process.env.OPENROUTER_API_KEY,
+      defaultHeaders: {
+        "HTTP-Referer": "https://github.com/theNetworkChuck/claude-phone",
+        "X-Title": "Claude Phone"
+      }
     });
   }
   return openai;
@@ -60,7 +66,7 @@ async function transcribe(audioBuffer, options = {}) {
 
   const client = getOpenAIClient();
   if (!client) {
-    throw new Error("OpenAI API key not configured");
+    throw new Error("OpenRouter API key not configured");
   }
 
   // Convert PCM to WAV if needed
@@ -78,7 +84,7 @@ async function transcribe(audioBuffer, options = {}) {
   try {
     const transcription = await client.audio.transcriptions.create({
       file: fs.createReadStream(tempFile),
-      model: "whisper-1",
+      model: "openai/whisper-1",
       language: language,
       response_format: "text"
     });
@@ -102,7 +108,7 @@ async function transcribe(audioBuffer, options = {}) {
  * @returns {boolean} True if API key is set
  */
 function isAvailable() {
-  return !!process.env.OPENAI_API_KEY;
+  return !!process.env.OPENROUTER_API_KEY;
 }
 
 module.exports = {

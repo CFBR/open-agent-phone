@@ -63,14 +63,14 @@ test('config module', async (t) => {
       version: '1.0.0',
       api: {
         elevenlabs: { apiKey: 'updated-key', validated: true },
-        openai: { apiKey: 'openai-key', validated: false }
+        openrouter: { apiKey: 'openrouter-key', validated: false }
       }
     };
 
     await saveConfig(updated);
     const config = await loadConfig();
     assert.strictEqual(config.api.elevenlabs.apiKey, 'updated-key');
-    assert.strictEqual(config.api.openai.apiKey, 'openai-key');
+    assert.strictEqual(config.api.openrouter.apiKey, 'openrouter-key');
   });
 
   await t.test('config with deployment.mode defaults to standard', async () => {

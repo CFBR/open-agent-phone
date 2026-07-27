@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import {
   validateElevenLabsKey,
-  validateOpenAIKey
+  validateOpenRouterKey
 } from '../lib/validators.js';
 
 test('validators module', async (t) => {
@@ -18,14 +18,14 @@ test('validators module', async (t) => {
     assert.ok(result.error);
   });
 
-  await t.test('validateOpenAIKey rejects empty key', async () => {
-    const result = await validateOpenAIKey('');
+  await t.test('validateOpenRouterKey rejects empty key', async () => {
+    const result = await validateOpenRouterKey('');
     assert.strictEqual(result.valid, false);
     assert.match(result.error, /API key cannot be empty/);
   });
 
-  await t.test('validateOpenAIKey rejects invalid format', async () => {
-    const result = await validateOpenAIKey('invalid-key');
+  await t.test('validateOpenRouterKey rejects invalid format', async () => {
+    const result = await validateOpenRouterKey('invalid-key');
     assert.strictEqual(result.valid, false);
     assert.ok(result.error);
   });

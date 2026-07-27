@@ -58,11 +58,11 @@ export async function validateElevenLabsKey(apiKey) {
 }
 
 /**
- * Validate OpenAI API key by making a test request
- * @param {string} apiKey - OpenAI API key
+ * Validate OpenRouter API key by making a test request
+ * @param {string} apiKey - OpenRouter API key
  * @returns {Promise<{valid: boolean, error?: string}>} Validation result
  */
-export async function validateOpenAIKey(apiKey) {
+export async function validateOpenRouterKey(apiKey) {
   if (!apiKey || apiKey.trim() === '') {
     return {
       valid: false,
@@ -71,7 +71,7 @@ export async function validateOpenAIKey(apiKey) {
   }
 
   try {
-    const response = await axios.get('https://api.openai.com/v1/models', {
+    const response = await axios.get('https://openrouter.ai/api/v1/auth/key', {
       headers: {
         'Authorization': `Bearer ${apiKey}`
       },

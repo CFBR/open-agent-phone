@@ -132,7 +132,7 @@ test('docker compose generation', async (t) => {
       ],
       api: {
         elevenlabs: { apiKey: 'elev-key' },
-        openai: { apiKey: 'openai-key' }
+        openrouter: { apiKey: 'openrouter-key' }
       },
       secrets: {
         drachtio: 'drachtio-secret',
@@ -176,7 +176,7 @@ test('docker compose generation', async (t) => {
       ],
       api: {
         elevenlabs: { apiKey: 'elev-key' },
-        openai: { apiKey: 'openai-key' }
+        openrouter: { apiKey: 'openrouter-key' }
       },
       secrets: {
         drachtio: 'drachtio-secret',
@@ -215,7 +215,7 @@ test('docker compose generation', async (t) => {
       ],
       api: {
         elevenlabs: { apiKey: 'elev-key' },
-        openai: { apiKey: 'openai-key' }
+        openrouter: { apiKey: 'openrouter-key' }
       },
       secrets: {
         drachtio: 'drachtio-secret',
@@ -258,7 +258,7 @@ test('docker compose generation', async (t) => {
       ],
       api: {
         elevenlabs: { apiKey: 'elev-key' },
-        openai: { apiKey: 'openai-key' }
+        openrouter: { apiKey: 'openrouter-key' }
       },
       secrets: {
         drachtio: 'drachtio-secret',

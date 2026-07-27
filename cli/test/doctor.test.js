@@ -27,8 +27,8 @@ describe('Doctor command', () => {
     assert.strictEqual(apiCheck.connected, true);
   });
 
-  it('should check OpenAI API connectivity', async () => {
-    // Mock test for OpenAI API check
+  it('should check OpenRouter API connectivity', async () => {
+    // Mock test for OpenRouter API check
     const apiCheck = { connected: true };
     assert.strictEqual(apiCheck.connected, true);
   });

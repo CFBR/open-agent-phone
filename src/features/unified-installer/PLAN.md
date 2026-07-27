@@ -266,8 +266,8 @@ device.command('remove <name>').description('Remove device').action(deviceRemove
 3. Prompt: ElevenLabs API key
    - Validate with test API call (list voices)
    - Show success/fail
-4. Prompt: OpenAI API key
-   - Validate with test API call (models list)
+4. Prompt: OpenRouter API key
+   - Validate with test API call (key verification)
    - Show success/fail
 5. Prompt: 3CX configuration
    - SIP domain
@@ -316,7 +316,7 @@ checks = [
   { name: 'Docker running', fn: checkDocker },
   { name: 'Claude CLI installed', fn: checkClaudeCli },
   { name: 'ElevenLabs API', fn: checkElevenLabs },
-  { name: 'OpenAI API', fn: checkOpenAI },
+  { name: 'OpenRouter API', fn: checkOpenRouter },
   { name: 'Voice-app container', fn: checkVoiceAppContainer },
   { name: 'Claude API server', fn: checkClaudeApiServer },
   { name: 'SIP registration', fn: checkSipRegistration },

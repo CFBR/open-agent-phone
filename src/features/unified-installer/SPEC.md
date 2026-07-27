@@ -49,7 +49,7 @@ This complexity creates a high barrier to entry for homelabbers and developers w
 
 - [x] **AC-6**: `claude-phone setup` launches interactive wizard
 - [x] **AC-7**: Wizard prompts for ElevenLabs API key with validation (test API call)
-- [x] **AC-8**: Wizard prompts for OpenAI API key with validation (test API call)
+- [x] **AC-8**: Wizard prompts for OpenRouter API key with validation (test API call)
 - [x] **AC-9**: Wizard prompts for 3CX configuration: SIP domain, registrar IP, extension, auth ID, password
 - [x] **AC-10**: Wizard prompts for first device setup: name, voice ID, system prompt
 - [x] **AC-11**: Wizard saves configuration securely (appropriate file permissions)
@@ -59,7 +59,7 @@ This complexity creates a high barrier to entry for homelabbers and developers w
 
 - [x] **AC-13**: `claude-phone doctor` runs full health check
 - [x] **AC-14**: Doctor validates ElevenLabs API connectivity
-- [x] **AC-15**: Doctor validates OpenAI API connectivity
+- [x] **AC-15**: Doctor validates OpenRouter API connectivity
 - [x] **AC-16**: Doctor validates Claude Code CLI is accessible
 - [x] **AC-17**: Doctor validates Docker is running
 - [x] **AC-18**: Doctor reports clear pass/fail for each check with actionable error messages
