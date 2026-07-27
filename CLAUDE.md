@@ -132,7 +132,7 @@ claude-phone/
 │   │   ├── query-routes.js   # Query API endpoints
 │   │   ├── registrar.js      # Single SIP registration
 │   │   ├── sip-handler.js    # Inbound call handling
-│   │   ├── tts-service.js    # ElevenLabs TTS
+│   │   ├── tts-service.js    # TTS (ElevenLabs or local Kokoro-82M)
 │   │   └── whisper-client.js # OpenAI Whisper STT
 │   ├── DEPLOYMENT.md         # Production deployment guide
 │   ├── README-OUTBOUND.md    # Outbound calling API docs

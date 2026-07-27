@@ -62,3 +62,12 @@ services:
     # Ports (for reference):
     # - 3000: HTTP API
     # - 3001: WebSocket for audio streaming
+
+  # Local TTS engine (Kokoro-82M) — used when TTS_PROVIDER=kokoro
+  # Uses ~2-3GB RAM on CPU. Remove or comment if using only ElevenLabs.
+  kokoro-tts:
+    image: ghcr.io/remsky/kokoro-fastapi:latest
+    container_name: kokoro-tts
+    restart: unless-stopped
+    network_mode: host
+    # Port 8880: HTTP API (OpenAI-compatible /v1/audio/speech)

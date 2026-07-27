@@ -153,6 +153,16 @@ services:
     depends_on:
       - drachtio
       - freeswitch
+
+  # Local TTS engine (Kokoro-82M via Kokoro-FastAPI)
+  # Only included when TTS provider is set to kokoro
+  # ~2-3GB RAM on CPU. Remove this service if using only ElevenLabs.
+  # kokoro-tts:
+  #   image: ghcr.io/remsky/kokoro-fastapi:latest${platformLine}
+  #   container_name: kokoro-tts
+  #   restart: unless-stopped
+  #   network_mode: host
+  #   # Port 8880: HTTP API for OpenAI-compatible /v1/audio/speech
 `;
 }
 
@@ -226,6 +236,11 @@ export function generateEnvFile(config) {
     '',
     '# OpenRouter (Whisper STT)',
     `OPENROUTER_API_KEY=${config.api.openrouter.apiKey}`,
+    '',
+    '# TTS Provider (elevenlabs or kokoro)',
+    'TTS_PROVIDER=elevenlabs',
+    '# Kokoro TTS URL (only used when TTS_PROVIDER=kokoro)',
+    'KOKORO_TTS_URL=http://127.0.0.1:8880',
     '',
     '# Application Settings',
     `HTTP_PORT=${config.server.httpPort}`,
