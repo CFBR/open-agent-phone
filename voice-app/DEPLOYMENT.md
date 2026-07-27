@@ -94,7 +94,9 @@ Key environment variables in the generated `.env`:
 |----------|---------|
 | `EXTERNAL_IP` | Server LAN IP for RTP routing |
 | `CLAUDE_API_URL` | URL to claude-api-server |
-| `ELEVENLABS_API_KEY` | TTS API key |
+| `TTS_PROVIDER` | TTS engine: `elevenlabs` (cloud) or `kokoro` (local) |
+| `ELEVENLABS_API_KEY` | ElevenLabs TTS API key (only if TTS_PROVIDER=elevenlabs) |
+| `KOKORO_TTS_URL` | Kokoro endpoint URL (only if TTS_PROVIDER=kokoro) |
 | `OPENROUTER_API_KEY` | Whisper STT API key (via OpenRouter) |
 | `SIP_DOMAIN` | 3CX server FQDN |
 | `SIP_REGISTRAR` | SIP registrar address |
