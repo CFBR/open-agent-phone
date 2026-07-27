@@ -15,8 +15,11 @@
 
 const express = require('express');
 const { spawn } = require('child_process');
+const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { URL } = require('url');
 const {
   buildQueryContext,
   buildStructuredPrompt,
@@ -116,6 +119,31 @@ const sessions = new Map();
 // Model selection - Sonnet for balanced speed/quality
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
 
+// ============================================
+// AI Backend Router Configuration
+// ============================================
+// Selects the AI provider at runtime.
+//
+//   ollama     — Local LLM via Ollama (default, free, runs in Docker)
+//   openai     — OpenAI API (requires OPENAI_API_KEY)
+//   openrouter — OpenRouter API (requires OPENROUTER_API_KEY)
+//   custom     — Any OpenAI-compatible API at AI_BACKEND_URL
+//   claude     — Claude Code CLI (original behavior, needs subscription)
+//
+const AI_BACKEND = (process.env.AI_BACKEND || 'ollama').toLowerCase();
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://ollama:11434';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
+const AI_BACKEND_URL = process.env.AI_BACKEND_URL || '';
+
+console.log(`[STARTUP] AI backend: ${AI_BACKEND}`);
+if (AI_BACKEND === 'ollama') {
+  console.log(`[STARTUP] Ollama URL: ${OLLAMA_URL}, model: ${OLLAMA_MODEL}`);
+}
+
+// Message history for non-Claude backends (maintains conversation context)
+// Maps callId -> Array<{role, content}>
+const chatHistories = new Map();
+
 function parseClaudeStdout(stdout) {
   // Claude Code CLI may output JSONL; when it does, extract the `result` message.
   // Otherwise, fall back to raw stdout.
@@ -144,7 +172,10 @@ function parseClaudeStdout(stdout) {
   return { response, sessionId };
 }
 
-function runClaudeOnce({ fullPrompt, callId, timestamp }) {
+/**
+ * Query Claude Code CLI — spawns the `claude` process with the prompt.
+ */
+async function queryClaude({ fullPrompt, callId, timestamp }) {
   const startTime = Date.now();
 
   const args = [
@@ -164,7 +195,7 @@ function runClaudeOnce({ fullPrompt, callId, timestamp }) {
     }
   }
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const claude = spawn('claude', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: false,
@@ -179,14 +210,210 @@ function runClaudeOnce({ fullPrompt, callId, timestamp }) {
     claude.stderr.on('data', (data) => { stderr += data.toString(); });
 
     claude.on('error', (error) => {
-      reject(error);
+      const duration_ms = Date.now() - startTime;
+      resolve({ success: false, response: stderr, sessionId: null, duration_ms, error: error.message });
     });
 
     claude.on('close', (code) => {
       const duration_ms = Date.now() - startTime;
-      resolve({ code, stdout, stderr, duration_ms });
+      if (code !== 0) {
+        resolve({ success: false, response: stdout, sessionId: null, duration_ms, error: stderr || `Exit code ${code}` });
+      } else {
+        const { response, sessionId } = parseClaudeStdout(stdout);
+        resolve({ success: true, response, sessionId, duration_ms });
+      }
     });
   });
+}
+
+// ============================================
+// HTTP helpers for OpenAI-compatible APIs
+// ============================================
+
+/**
+ * Make an HTTP request and return parsed JSON.
+ */
+function httpRequest(url, options, body) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const lib = parsedUrl.protocol === 'https:' ? https : http;
+    const payload = body ? JSON.stringify(body) : null;
+
+    const req = lib.request(
+      {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: options.method || 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
+          ...(options.headers || {}),
+        },
+        timeout: options.timeout || 120000,
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            resolve({ status: res.statusCode, data: JSON.parse(data), raw: data });
+          } catch {
+            resolve({ status: res.statusCode, data: null, raw: data });
+          }
+        });
+      }
+    );
+
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+/**
+ * Query any OpenAI-compatible chat completion API.
+ */
+async function queryOpenAI({ fullPrompt, callId, timestamp, baseURL, apiKey, model }) {
+  const startTime = Date.now();
+
+  // Build message history for conversation context
+  let messages = [];
+  if (callId && chatHistories.has(callId)) {
+    messages = chatHistories.get(callId);
+  }
+  messages.push({ role: 'user', content: fullPrompt });
+
+  const url = baseURL.replace(/\/+$/, '') + '/v1/chat/completions';
+  const body = {
+    model: model || process.env.AI_MODEL || 'gpt-4o-mini',
+    messages,
+    stream: false,
+  };
+
+  try {
+    const response = await httpRequest(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      timeout: 120000,
+    });
+
+    const duration_ms = Date.now() - startTime;
+
+    if (response.status !== 200) {
+      return {
+        success: false,
+        response: response.raw,
+        sessionId: null,
+        duration_ms,
+        error: `API error ${response.status}: ${response.raw}`,
+      };
+    }
+
+    const content = response.data?.choices?.[0]?.message?.content || '';
+
+    // Store conversation history
+    if (callId) {
+      messages.push({ role: 'assistant', content });
+      chatHistories.set(callId, messages);
+    }
+
+    return { success: true, response: content, sessionId: callId || null, duration_ms };
+  } catch (error) {
+    return {
+      success: false,
+      response: '',
+      sessionId: null,
+      duration_ms: Date.now() - startTime,
+      error: error.message,
+    };
+  }
+}
+
+/**
+ * Query local Ollama instance (OpenAI-compatible).
+ */
+async function queryOllama({ fullPrompt, callId, timestamp }) {
+  return queryOpenAI({
+    fullPrompt,
+    callId,
+    timestamp,
+    baseURL: OLLAMA_URL,
+    apiKey: 'ollama',  // Ollama accepts any key or none
+    model: OLLAMA_MODEL,
+  });
+}
+
+/**
+ * Route a query to the configured AI backend.
+ *
+ * Returns { success, response, sessionId, duration_ms, error }
+ *   - success: boolean
+ *   - response: the AI response text (parsed)
+ *   - sessionId: session identifier for multi-turn (Claude session or callId)
+ *   - duration_ms: wall-clock time
+ *   - error: error message on failure
+ */
+async function queryAI({ fullPrompt, callId, timestamp }) {
+  switch (AI_BACKEND) {
+    case 'ollama':
+      return queryOllama({ fullPrompt, callId, timestamp });
+
+    case 'openai':
+      return queryOpenAI({
+        fullPrompt,
+        callId,
+        timestamp,
+        baseURL: 'https://api.openai.com/v1',
+        apiKey: process.env.OPENAI_API_KEY,
+        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      });
+
+    case 'openrouter':
+      return queryOpenAI({
+        fullPrompt,
+        callId,
+        timestamp,
+        baseURL: 'https://openrouter.ai/api/v1',
+        apiKey: process.env.OPENROUTER_API_KEY,
+        model: process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini',
+      });
+
+    case 'custom':
+      if (!AI_BACKEND_URL) {
+        return {
+          success: false,
+          response: '',
+          sessionId: null,
+          duration_ms: 0,
+          error: 'AI_BACKEND_URL not set but AI_BACKEND=custom',
+        };
+      }
+      return queryOpenAI({
+        fullPrompt,
+        callId,
+        timestamp,
+        baseURL: AI_BACKEND_URL,
+        apiKey: process.env.AI_API_KEY || '',
+        model: process.env.AI_MODEL,
+      });
+
+    case 'claude':
+      return queryClaude({ fullPrompt, callId, timestamp });
+
+    default:
+      return {
+        success: false,
+        response: '',
+        sessionId: null,
+        duration_ms: 0,
+        error: `Unknown AI_BACKEND: ${AI_BACKEND}. Valid options: ollama, openai, openrouter, custom, claude`,
+      };
+  }
 }
 
 /**
@@ -289,26 +516,23 @@ app.post('/ask', async (req, res) => {
     fullPrompt += VOICE_CONTEXT;
     fullPrompt += prompt;
 
-    const { code, stdout, stderr, duration_ms } = await runClaudeOnce({ fullPrompt, callId, timestamp });
+    const result = await queryAI({ fullPrompt, callId, timestamp });
 
-    if (code !== 0) {
-      console.error(`[${new Date().toISOString()}] ERROR: Claude CLI exited with code ${code}`);
-      console.error(`STDERR: ${stderr}`);
-      console.error(`STDOUT: ${stdout.substring(0, 500)}`);
-      const errorMsg = stderr || stdout || `Exit code ${code}`;
-      return res.json({ success: false, error: `Claude CLI failed: ${errorMsg}`, duration_ms });
+    if (!result.success) {
+      console.error(`[${new Date().toISOString()}] ERROR: AI query failed: ${result.error}`);
+      return res.json({ success: false, error: `AI query failed: ${result.error}`, duration_ms: result.duration_ms });
     }
 
-    const { response, sessionId } = parseClaudeStdout(stdout);
+    const { response, sessionId } = result;
 
-    if (sessionId && callId) {
+    if (sessionId && callId && AI_BACKEND === 'claude') {
       sessions.set(callId, sessionId);
       console.log(`[${new Date().toISOString()}] SESSION STORED: ${callId} -> ${sessionId}`);
     }
 
-    console.log(`[${new Date().toISOString()}] RESPONSE (${duration_ms}ms): "${response.substring(0, 100)}..."`);
+    console.log(`[${new Date().toISOString()}] RESPONSE (${result.duration_ms}ms): "${response.substring(0, 100)}..."`);
 
-    res.json({ success: true, response, sessionId, duration_ms });
+    res.json({ success: true, response, sessionId, duration_ms: result.duration_ms });
 
   } catch (error) {
     const duration_ms = Date.now() - startTime;
@@ -389,12 +613,12 @@ app.post('/ask-structured', async (req, res) => {
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       attemptsMade = attempt + 1;
-      const { code, stdout, stderr, duration_ms } = await runClaudeOnce({ fullPrompt, callId, timestamp });
-      totalDuration += duration_ms;
+      const result = await queryAI({ fullPrompt, callId, timestamp });
+      totalDuration += result.duration_ms;
 
-      if (code !== 0) {
-        lastError = `Claude CLI failed: ${stderr}`;
-        lastRaw = String(stdout || '').trim();
+      if (!result.success) {
+        lastError = result.error || 'AI query failed';
+        lastRaw = result.response || '';
         return res.status(502).json({
           success: false,
           error: lastError,
@@ -404,10 +628,10 @@ app.post('/ask-structured', async (req, res) => {
         });
       }
 
-      const { response, sessionId } = parseClaudeStdout(stdout);
+      const { response, sessionId } = result;
       lastRaw = response;
 
-      if (sessionId && callId) sessions.set(callId, sessionId);
+      if (sessionId && callId && AI_BACKEND === 'claude') sessions.set(callId, sessionId);
 
       const parsed = tryParseJsonFromText(response);
       if (!parsed.ok) {

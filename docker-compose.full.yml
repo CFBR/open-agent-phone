@@ -1,0 +1,191 @@
+# ============================================================================
+# Docker Compose — Full Self-Contained Deployment
+# ============================================================================
+#
+# One-file deployment: all services in Docker, no native dependencies.
+# Zero billing defaults (Ollama + Kokoro), no API keys required.
+#
+# Usage:
+#   1. Copy .env.example to .env, fill in your settings
+#   2. docker compose -f docker-compose.full.yml up -d
+#
+# This replaces the need for a separate Raspberry Pi — runs on any
+# Linux x86/ARM server with Docker.
+#
+# ============================================================================
+
+version: '3.8'
+
+# ============================================================================
+# Default .env values (override in .env)
+# ============================================================================
+x-defaults: &defaults
+  EXTERNAL_IP: 10.0.0.100
+  DRACHTIO_SECRET: cymru
+  DRACHTIO_SIP_PORT: 5070
+  FREESWITCH_SECRET: JambonzR0ck$
+  TTS_PROVIDER: kokoro
+  AI_BACKEND: ollama
+  OLLAMA_MODEL: llama3.2:3b
+
+# ============================================================================
+# Services
+# ============================================================================
+services:
+
+  # ------------------------------------------------------------------
+  # 3CX SBC — Session Border Controller (connects to 3CX cloud)
+  # ------------------------------------------------------------------
+  # Requires: SBC_FQDN, SBC_AUTH_ID, SBC_PASSWORD in .env
+  # Network: host (SIP + RTP need direct host access)
+  # ------------------------------------------------------------------
+  sbc:
+    build: ./docker/sbc
+    container_name: sbc
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env
+    environment:
+      SBC_LAN_IP: ${EXTERNAL_IP:-10.0.0.100}
+    # Ports (host mode, documented for reference):
+    # - 5060 UDP/TCP: SIP
+    # - 20000-20099 UDP: RTP media
+
+  # ------------------------------------------------------------------
+  # Drachtio — SIP server
+  # ------------------------------------------------------------------
+  # Uses 5070 (not 5060) because 3CX SBC occupies 5060
+  # ------------------------------------------------------------------
+  drachtio:
+    image: drachtio/drachtio-server:latest
+    container_name: drachtio
+    restart: unless-stopped
+    network_mode: host
+    command: >
+      drachtio
+      --contact "sip:*:${DRACHTIO_SIP_PORT:-5070};transport=tcp,udp"
+      --external-ip ${EXTERNAL_IP}
+      --secret ${DRACHTIO_SECRET:-cymru}
+      --port 9022
+      --loglevel info
+    # Ports: 5060/5070 SIP, 9022 admin
+
+  # ------------------------------------------------------------------
+  # FreeSWITCH — Media server (RTP audio)
+  # ------------------------------------------------------------------
+  freeswitch:
+    image: drachtio/drachtio-freeswitch-mrf:latest
+    container_name: freeswitch
+    restart: unless-stopped
+    network_mode: host
+    command: >
+      freeswitch
+      --sip-port 5080
+      --rtp-range-start 30000
+      --rtp-range-end 30100
+      --ext-rtp-ip ${EXTERNAL_IP}
+      --ext-sip-ip ${EXTERNAL_IP}
+      --advertise-external-ip
+    environment:
+      - EXTERNAL_IP=${EXTERNAL_IP}
+    # Ports: 5080 SIP, 8021 ESL, 30000-30100 RTP
+
+  # ------------------------------------------------------------------
+  # Voice App — STT, TTS, call orchestration
+  # ------------------------------------------------------------------
+  voice-app:
+    build: ./voice-app
+    container_name: voice-app
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env
+    volumes:
+      - ./voice-app/audio:/app/audio
+      - ./voice-app/config:/app/config
+    depends_on:
+      - drachtio
+      - freeswitch
+    # Ports: 3000 HTTP, 3001 WS
+
+  # ------------------------------------------------------------------
+  # Kokoro TTS — Local text-to-speech (OpenAI-compatible API)
+  # ------------------------------------------------------------------
+  # ~2-3GB RAM on CPU. Free, no API key needed.
+  # Quality: #2 in TTS Arena (behind ElevenLabs, better than most paid)
+  # ------------------------------------------------------------------
+  kokoro-tts:
+    image: ghcr.io/remsky/kokoro-fastapi:latest
+    container_name: kokoro-tts
+    restart: unless-stopped
+    network_mode: host
+    # Port: 8880 HTTP (OpenAI-compatible /v1/audio/speech)
+
+  # ------------------------------------------------------------------
+  # AI Backend — Pluggable AI provider (Ollama, Claude CLI, etc.)
+  # ------------------------------------------------------------------
+  # Default: Ollama (local, free). Set AI_BACKEND in .env to change.
+  #
+  #   AI_BACKEND=ollama     → Ollama (free, default)
+  #   AI_BACKEND=claude     → Claude CLI (mount ~/.claude volume)
+  #   AI_BACKEND=openai     → OpenAI API (set OPENAI_API_KEY)
+  #   AI_BACKEND=openrouter → OpenRouter (set OPENROUTER_API_KEY)
+  #   AI_BACKEND=custom     → Any OpenAI-compatible API
+  # ------------------------------------------------------------------
+  ai-backend:
+    build: ./docker/api-server
+    container_name: ai-backend
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env
+    environment:
+      AI_BACKEND: ${AI_BACKEND:-ollama}
+      OLLAMA_URL: http://127.0.0.1:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+    volumes:
+      # Claude CLI auth (only needed if AI_BACKEND=claude)
+      - ${HOME:-/root}/.claude:/root/.claude:ro
+    depends_on:
+      - ollama
+    # Port: 3333 HTTP (AI query API)
+
+  # ------------------------------------------------------------------
+  # Ollama — Local LLM (free, no API key)
+  # ------------------------------------------------------------------
+  # Runs Llama 3.2 3B by default (~2GB RAM, works on CPU).
+  # For better quality, swap to a larger model in OLLAMA_MODEL.
+  #
+  # ⚠️ First startup: Ollama auto-pulls the model on first request.
+  #    This may take a few minutes depending on model size and
+  #    internet speed. Subsequent starts are instant.
+  # ------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      OLLAMA_HOST: 127.0.0.1:11434
+      OLLAMA_KEEP_ALIVE: 24h  # Keep model loaded between calls
+    volumes:
+      - ollama-data:/root/.ollama
+    # Port: 11434 HTTP (OpenAI-compatible API)
+
+  # ------------------------------------------------------------------
+  # [Optional] Cloudflare Tunnel — Expose the API securely
+  # ------------------------------------------------------------------
+  # Uncomment to expose voice-app behind Cloudflare Tunnel.
+  # Requires: cloudflared tunnel login, tunnel credentials file.
+  # ------------------------------------------------------------------
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: cloudflared
+  #   restart: unless-stopped
+  #   command: tunnel run
+  #   environment:
+  #     TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+
+# ============================================================================
+# Named volumes
+# ============================================================================
+volumes:
+  ollama-data:

@@ -11,15 +11,16 @@ Claude Phone gives your Claude Code installation a phone number through 3CX PBX 
 ## Tech Stack
 
 | Component | Technology |
-|-----------|------------|
+|-----------|-----------|
 | Language | Node.js (ES modules for CLI, CommonJS for voice-app) |
 | SIP Server | drachtio-srf |
 | Media Server | FreeSWITCH (via drachtio-fsmrf) |
-| STT | OpenAI Whisper API |
-| TTS | ElevenLabs API |
-| AI Backend | Claude Code CLI (via HTTP wrapper) |
+| STT | OpenRouter (bring your own key, any provider) |
+| TTS | ElevenLabs API (cloud) or Kokoro-82M (local, free) |
+| AI Backend | Ollama (local, free) / Claude Code CLI / OpenAI / OpenRouter |
 | PBX | 3CX (any SIP-compatible works) |
 | Container | Docker Compose |
+| SBC | 3CX SBC in Docker (optional, replaces native install) |
 
 ## Architecture
 
@@ -60,7 +61,16 @@ claude-phone/
 ├── package.json              # Root package (hooks, linting, tests)
 ├── eslint.config.js          # ESLint configuration
 ├── docker-compose.yml        # Multi-container orchestration
+├── docker-compose.full.yml  # Single-server deployment (all containers)
+├── docker-compose.bridge.yml # Bridge networking override (Mac)
 ├── .env.example              # Environment template
+├──
+├── docker/                   # Custom Docker images
+│   ├── sbc/                  # 3CX SBC container
+│   │   ├── Dockerfile
+│   │   └── entrypoint.sh
+│   └── api-server/           # AI backend container (Ollama/Claude/etc.)
+│       └── Dockerfile
 │
 ├── .claude/commands/         # DevFlow slash commands
 │   ├── feature.md            # /feature spec|start|ship
