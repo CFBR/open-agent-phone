@@ -40,7 +40,9 @@ services:
   # Network: host (SIP + RTP need direct host access)
   # ------------------------------------------------------------------
   sbc:
-    build: ./docker/sbc
+    build:
+      context: .
+      dockerfile: docker/sbc/Dockerfile
     container_name: sbc
     restart: unless-stopped
     network_mode: host
@@ -132,7 +134,9 @@ services:
   #   AI_BACKEND=custom     → Any OpenAI-compatible API
   # ------------------------------------------------------------------
   ai-backend:
-    build: ./docker/api-server
+    build:
+      context: .
+      dockerfile: docker/api-server/Dockerfile
     container_name: ai-backend
     restart: unless-stopped
     network_mode: host
