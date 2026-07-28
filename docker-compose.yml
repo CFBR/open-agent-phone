@@ -22,7 +22,7 @@ services:
     # - 9022: Admin/App Port
 
   freeswitch:
-    image: drachtio/drachtio-freeswitch-mrf:latest
+    image: drachtio/drachtio-freeswitch-mrf:0.9.4
     container_name: freeswitch
     restart: unless-stopped
     network_mode: host

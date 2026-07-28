@@ -104,7 +104,7 @@ export function generateDockerCompose(config) {
   // Determine if running on Pi (ARM64) - use specific versions with platform
   const isPiMode = config.deployment && config.deployment.mode === 'pi-split';
   const drachtioImage = isPiMode ? 'drachtio/drachtio-server:0.9.4' : 'drachtio/drachtio-server:latest';
-  const freeswitchImage = 'drachtio/drachtio-freeswitch-mrf:latest';
+  const freeswitchImage = 'drachtio/drachtio-freeswitch-mrf:0.9.4';
   const platformLine = isPiMode ? '\n    platform: linux/arm64' : '';
 
   return `version: '3.8'
@@ -313,7 +313,7 @@ export async function startContainers() {
             'ARM64 Docker image pull failed.\n\n' +
             'Try manually pulling images:\n' +
             '  docker pull drachtio/drachtio-server:latest\n' +
-            '  docker pull drachtio/drachtio-freeswitch-mrf:latest\n\n' +
+            '  docker pull drachtio/drachtio-freeswitch-mrf:0.9.4\n' +
             'If images are not available for ARM64, you may need to build them locally.'
           );
           reject(error);
