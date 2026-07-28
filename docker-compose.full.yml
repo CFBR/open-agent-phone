@@ -114,7 +114,7 @@ services:
   # Quality: #2 in TTS Arena (behind ElevenLabs, better than most paid)
   # ------------------------------------------------------------------
   kokoro-tts:
-    image: ghcr.io/remsky/kokoro-fastapi:latest
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
     container_name: kokoro-tts
     restart: unless-stopped
     network_mode: host

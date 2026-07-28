@@ -158,7 +158,7 @@ services:
   # Only included when TTS provider is set to kokoro
   # ~2-3GB RAM on CPU. Remove this service if using only ElevenLabs.
   # kokoro-tts:
-  #   image: ghcr.io/remsky/kokoro-fastapi:latest${platformLine}
+  #   image: ghcr.io/remsky/kokoro-fastapi-cpu:latest${platformLine}
   #   container_name: kokoro-tts
   #   restart: unless-stopped
   #   network_mode: host

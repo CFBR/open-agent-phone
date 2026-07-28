@@ -229,7 +229,7 @@ All components **except the 3CX SBC** can run in Docker containers on a single m
 | **voice-app** | ✓ | `voice-app/Dockerfile` (built locally) |
 | **drachtio** | ✓ | `drachtio/drachtio-server` |
 | **freeswitch** | ✓ | `drachtio/drachtio-freeswitch-mrf` |
-| **kokoro-tts** | ✓ | `ghcr.io/remsky/kokoro-fastapi` |
+| **kokoro-tts** | ✓ | `ghcr.io/remsky/kokoro-fastapi-cpu` |
 | **claude-api-server** | ⚠️ Needs Dockerfile | Requires Claude CLI in container |
 | **3CX SBC** | ⚠️ Community images | Needs official 3CX support or manual setup |
 
