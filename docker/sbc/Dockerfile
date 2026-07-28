@@ -32,14 +32,15 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     wget \
     gnupg \
-    systemd \
     libc6 \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Add 3CX GPG key and repository
-RUN wget -qO- https://downloads-global.3cx.com/downloads/3cx-sbc/3cx-sbc.key | gpg --dearmor -o /usr/share/keyrings/3cxsbc-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/3cxsbc-archive-keyring.gpg] https://downloads-global.3cx.com/downloads/3cx-sbc/debian bookworm main" > /etc/apt/sources.list.d/3cxsbc.list
+# The SBC uses the same public key as 3CX PBX
+RUN wget -qO- http://downloads-global.3cx.com/downloads/3cxpbx/public.key | gpg --dearmor -o /usr/share/keyrings/3cxsbc-archive-keyring.gpg \
+    && chmod 644 /usr/share/keyrings/3cxsbc-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/3cxsbc-archive-keyring.gpg] http://downloads-global.3cx.com/downloads/debian bookworm main" > /etc/apt/sources.list.d/3cxsbc.list
 
 # Install the 3CX SBC package
 RUN apt-get update \
