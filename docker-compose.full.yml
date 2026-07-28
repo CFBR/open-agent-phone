@@ -36,8 +36,14 @@ services:
   # ------------------------------------------------------------------
   # 3CX SBC — Session Border Controller (connects to 3CX cloud)
   # ------------------------------------------------------------------
-  # Requires: SBC_FQDN, SBC_AUTH_ID, SBC_PASSWORD in .env
-  # Network: host (SIP + RTP need direct host access)
+  #
+  # ⚠️  As of 2026, 3CX no longer provides a standalone x86 Debian package.
+  #    The SBC must be installed natively on your host or via the 3CX
+  #    Debian ISO. See docker/sbc/Dockerfile for details.
+  #
+  # To skip the SBC: docker compose -f docker-compose.full.yml up -d --scale sbc=0
+  # For port-forwarding SIP, route 5060 UDP/TCP to this server's drachtio.
+  #
   # ------------------------------------------------------------------
   sbc:
     build:
@@ -46,12 +52,8 @@ services:
     container_name: sbc
     restart: unless-stopped
     network_mode: host
-    env_file: .env
-    environment:
-      SBC_LAN_IP: ${EXTERNAL_IP:-10.0.0.100}
-    # Ports (host mode, documented for reference):
-    # - 5060 UDP/TCP: SIP
-    # - 20000-20099 UDP: RTP media
+    # Command sleeps — SBC must be installed natively
+    command: ["sleep", "infinity"]
 
   # ------------------------------------------------------------------
   # Drachtio — SIP server
@@ -76,7 +78,10 @@ services:
   # FreeSWITCH — Media server (RTP audio)
   # ------------------------------------------------------------------
   freeswitch:
-    image: drachtio/drachtio-freeswitch-mrf:0.9.4
+    image: open-agent--phone-freeswitch:latest
+    build:
+      context: .
+      dockerfile: docker/freeswitch/Dockerfile
     container_name: freeswitch
     restart: unless-stopped
     network_mode: host

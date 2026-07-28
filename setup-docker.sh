@@ -11,14 +11,18 @@
 # This script:
 #   - Checks prerequisites (Docker, git)
 #   - Pulls all required Docker images
-#   - Builds custom images (sbc, api-server, voice-app)
+#   - Builds custom images (freeswitch, api-server, voice-app)
 #   - Pulls the default Ollama model (llama3.2:3b)
 #   - Starts all containers via docker-compose.full.yml
 #   - Shows status and logs
 #
 # Zero-billing defaults:
 #   AI_BACKEND=ollama  +  TTS_PROVIDER=kokoro  →  no API keys needed
-#   Only requirement: a free 3CX cloud account
+#
+# CPU compatibility:
+#   ⚠  If your server runs under QEMU/KVM with an old virtual CPU,
+#      FreeSWITCH will be built from source with AVX disabled.
+#      This adds ~30min to setup time but ensures compatibility.
 #
 # ============================================================================
 
@@ -34,7 +38,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Claude Phone — Full Docker Setup${NC}"
+echo -e "${BLUE}  Open Agent Phone — Full Docker Setup${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -50,7 +54,6 @@ fi
 if ! docker info &> /dev/null; then
     echo -e "${RED}Docker daemon not running. Start it:${NC}"
     echo "  sudo systemctl start docker"
-    echo "  # or for rootless: dockerd-rootless-setuptool.sh install"
     exit 1
 fi
 
@@ -71,6 +74,13 @@ echo -e "  Compose:       ${GREEN}$($COMPOSE_CMD version)${NC}"
 echo -e "  Architecture:  ${GREEN}$(uname -m)${NC}"
 echo ""
 
+# Check if AVX is available (affects freeswitch build)
+if ! grep -q ' avx ' /proc/cpuinfo 2>/dev/null; then
+    echo -e "  ${YELLOW}  ⚠  CPU lacks AVX — FreeSWITCH will be built from source${NC}"
+    echo -e "  ${YELLOW}  This adds ~30min to the first setup.${NC}"
+    echo ""
+fi
+
 # ---- .env ----
 echo -e "${YELLOW}[2/6] Checking .env configuration...${NC}"
 if [ ! -f .env ]; then
@@ -79,9 +89,7 @@ if [ ! -f .env ]; then
     echo -e "  ${RED}WARNING: Edit .env with your settings before continuing!${NC}"
     echo -e "  ${YELLOW}  At minimum, set:${NC}"
     echo -e "  ${YELLOW}    EXTERNAL_IP  → your server's LAN IP${NC}"
-    echo -e "  ${YELLOW}    SIP_DOMAIN   → your 3CX FQDN${NC}"
-    echo -e "  ${YELLOW}    SIP_AUTH_ID  → from 3CX extension${NC}"
-    echo -e "  ${YELLOW}    SIP_PASSWORD → from 3CX extension${NC}"
+    echo -e "  ${YELLOW}    SIP_DOMAIN   → your 3CX FQDN (if using 3CX)${NC}"
     echo -e "  ${YELLOW}Then re-run this script.${NC}"
     exit 1
 else
@@ -95,20 +103,19 @@ set -a; source .env; set +a
 # ---- Pull images ----
 echo -e "${YELLOW}[3/6] Pulling Docker images...${NC}"
 
-$COMPOSE_CMD -f docker-compose.full.yml pull drachtio freeswitch kokoro-tts ollama 2>&1 | while IFS= read -r line; do
+$COMPOSE_CMD -f docker-compose.full.yml pull drachtio kokoro-tts ollama 2>&1 | while IFS= read -r line; do
     if [[ $line == *"Pulled"* ]] || [[ $line == *" pulling"* ]] || [[ $line == *" already"* ]]; then
         echo -e "  ${GREEN}$line${NC}"
     fi
 done
-
 echo -e "  ${GREEN}Images pulled${NC}"
 echo ""
 
 # ---- Build custom images ----
 echo -e "${YELLOW}[4/6] Building custom Docker images...${NC}"
 
-echo -e "  Building sbc..."
-$COMPOSE_CMD -f docker-compose.full.yml build sbc 2>&1 | tail -1
+echo -e "  Building freeswitch (compatibility build)..."
+$COMPOSE_CMD -f docker-compose.full.yml build freeswitch 2>&1 | tail -1
 
 echo -e "  Building api-server..."
 $COMPOSE_CMD -f docker-compose.full.yml build ai-backend 2>&1 | tail -1
@@ -131,9 +138,7 @@ if [ "$AI_BACKEND" = "ollama" ]; then
         ollama/ollama:latest \
         sh -c "ollama serve & sleep 2 && ollama pull $MODEL && echo 'PULLED'" 2>&1 || true
 
-    # Wait for pull to finish
     sleep 5
-    # Check if it's still running (model is large)
     if docker ps --filter name=ollama-pull --format '{{.Status}}' 2>/dev/null | grep -q "Up"; then
         echo -e "  ${YELLOW}Pull in progress (large model)... will continue in background${NC}"
         echo -e "  ${YELLOW}Containers will start once pull finishes${NC}"
@@ -148,7 +153,7 @@ echo ""
 # ---- Start services ----
 echo -e "${YELLOW}[6/6] Starting services...${NC}"
 
-$COMPOSE_CMD -f docker-compose.full.yml up -d 2>&1
+$COMPOSE_CMD -f docker-compose.full.yml up -d --scale sbc=0 2>&1
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
@@ -158,14 +163,15 @@ echo ""
 echo -e "  ${BLUE}Status:${NC}"
 $COMPOSE_CMD -f docker-compose.full.yml ps 2>&1
 echo ""
-echo -e "  ${BLUE}View logs:${NC}  $COMPOSE_CMD -f docker-compose.full.yml logs -f"
-echo -e "  ${BLUE}Stop all:${NC}   $COMPOSE_CMD -f docker-compose.full.yml down"
-echo -e "  ${BLUE}Voice API:${NC}  http://${EXTERNAL_IP:-127.0.0.1}:3000"
+echo -e "  ${BLUE}View logs:${NC}    $COMPOSE_CMD -f docker-compose.full.yml logs -f"
+echo -e "  ${BLUE}Stop all:${NC}     $COMPOSE_CMD -f docker-compose.full.yml down"
+echo -e "  ${BLUE}Voice API:${NC}    http://${EXTERNAL_IP:-127.0.0.1}:3000"
 echo ""
 echo -e "  ${YELLOW}First startup notes:${NC}"
 echo -e "  - Ollama will auto-pull the model on first query (~2min)"
 echo -e "  - Kokoro TTS loads models on first TTS request (~30s)"
-echo -e "  - 3CX SBC needs valid SBC_FQDN/AUTH_ID/PASSWORD in .env"
+echo -e "  - 3CX SBC must be installed NATIVELY (not in Docker)"
+echo -e "    See docker/sbc/Dockerfile for details"
 echo ""
 echo -e "  ${YELLOW}Zero-billing?${NC}"
 echo -e "  AI_BACKEND=${AI_BACKEND:-ollama} + TTS_PROVIDER=${TTS_PROVIDER:-kokoro}"
