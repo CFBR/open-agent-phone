@@ -16,7 +16,10 @@ import {
   validateVoiceId,
   validateExtension,
   validateIP,
-  validateHostname
+  validateHostname,
+  validateOllama,
+  validateKokoro,
+  validateOpenAICompat
 } from '../validators.js';
 import { getLocalIP, getProjectRoot } from '../utils.js';
 import { isRaspberryPi } from '../platform.js';
@@ -356,11 +359,15 @@ async function setupVoiceServer(config) {
   config.server = config.server || {};
   config.server.claudeApiPort = parseInt(apiServerAnswers.apiServerPort, 10);
 
-  // Step 3: API Keys (for TTS/STT)
+  // Step 3: Provider Selection (TTS, AI Backend, STT)
+  console.log(chalk.bold('\n🔧 Provider Selection'));
+  config = await setupProviderSelection(config);
+
+  // Step 4: API Keys (for TTS/STT)
   console.log(chalk.bold('\n📡 API Configuration'));
   config = await setupAPIKeys(config);
 
-  // Step 4: Device Configuration
+  // Step 5: Device Configuration
   console.log(chalk.bold('\n🤖 Device Configuration'));
   config = await setupDevice(config);
 
@@ -425,11 +432,15 @@ async function setupBoth(config) {
     config.deployment.mode = 'both';
   }
 
-  // Step 1: API Keys
+  // Step 1: Provider Selection (TTS, AI Backend, STT)
+  console.log(chalk.bold('\n🔧 Provider Selection'));
+  config = await setupProviderSelection(config);
+
+  // Step 2: API Keys
   console.log(chalk.bold('\n📡 API Configuration'));
   config = await setupAPIKeys(config);
 
-  // Step 2: 3CX/SIP Configuration
+  // Step 3: 3CX/SIP Configuration
   console.log(chalk.bold('\n☎️  SIP Configuration'));
   config = await setupSIP(config);
 
@@ -613,11 +624,15 @@ async function setupPi(config) {
     console.log(chalk.yellow('  ⚠️  Make sure API server is running and port is open (firewall)\n'));
   }
 
-  // Step 1: API Keys (only for voice services - TTS/STT)
+  // Step 1: Provider Selection (TTS, AI Backend, STT)
+  console.log(chalk.bold('\n🔧 Provider Selection'));
+  config = await setupProviderSelection(config);
+
+  // Step 2: API Keys (only for voice services - TTS/STT)
   console.log(chalk.bold('\n📡 API Configuration'));
   config = await setupAPIKeys(config);
 
-  // Step 2: 3CX SBC Configuration (Pi mode uses SBC)
+  // Step 3: 3CX SBC Configuration (Pi mode uses SBC)
   console.log(chalk.bold('\n📡 3CX SBC Connection'));
   config = await setupSBC(config);
 
@@ -670,7 +685,16 @@ function createDefaultConfig() {
     version: '1.0.0',
     api: {
       elevenlabs: { apiKey: '', defaultVoiceId: '', validated: false },
-      openrouter: { apiKey: '', validated: false }
+      openrouter: { apiKey: '', validated: false },
+      // Provider selection fields
+      ttsProvider: 'kokoro',
+      aiBackend: 'ollama',
+      ollamaUrl: 'http://localhost:11434',
+      ollamaModel: 'llama3.2:3b',
+      sttProvider: 'openrouter',
+      kokoroUrl: 'http://localhost:8880',
+      localWhisperUrl: 'http://localhost:7000',
+      customSttUrl: ''
     },
     sip: {
       domain: '',
@@ -695,138 +719,466 @@ function createDefaultConfig() {
 }
 
 /**
+ * Setup provider selection (TTS, AI backend, STT)
+ * @param {object} config - Current config
+ * @returns {Promise<object>} Updated config
+ */
+async function setupProviderSelection(config) {
+  console.log(chalk.bold('\n🔧 Provider Selection'));
+
+  // TTS Provider selection
+  const ttsAnswers = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'ttsProvider',
+      message: 'Text-to-Speech provider:',
+      default: config.api.ttsProvider || 'kokoro',
+      choices: [
+        { name: 'Kokoro-82M (local, free, open-source)', value: 'kokoro' },
+        { name: 'ElevenLabs (cloud, premium quality)', value: 'elevenlabs' }
+      ]
+    }
+  ]);
+  config.api.ttsProvider = ttsAnswers.ttsProvider;
+
+  // AI Backend selection
+  const aiAnswers = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'aiBackend',
+      message: 'AI backend:',
+      default: config.api.aiBackend || 'ollama',
+      choices: [
+        { name: 'Ollama (local, free)', value: 'ollama' },
+        { name: 'OpenAI API', value: 'openai' },
+        { name: 'OpenRouter API', value: 'openrouter' },
+        { name: 'Custom OpenAI-compatible API', value: 'custom' },
+        { name: 'Claude Code CLI (subscription)', value: 'claude' }
+      ]
+    }
+  ]);
+  config.api.aiBackend = aiAnswers.aiBackend;
+
+  // If Ollama selected, prompt for URL and model
+  if (aiAnswers.aiBackend === 'ollama') {
+    const ollamaAnswers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'ollamaUrl',
+        message: 'Ollama URL:',
+        default: config.api.ollamaUrl || 'http://localhost:11434',
+        validate: (input) => {
+          if (!input || input.trim() === '') return 'URL is required';
+          try { new URL(input); return true; } catch { return 'Invalid URL format'; }
+        }
+      },
+      {
+        type: 'input',
+        name: 'ollamaModel',
+        message: 'Ollama model:',
+        default: config.api.ollamaModel || 'llama3.2:3b'
+      }
+    ]);
+    config.api.ollamaUrl = ollamaAnswers.ollamaUrl;
+    config.api.ollamaModel = ollamaAnswers.ollamaModel;
+  }
+
+  // If Custom AI backend selected, prompt for URL and API key
+  if (aiAnswers.aiBackend === 'custom') {
+    const customAnswers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'customAiUrl',
+        message: 'Custom AI API base URL:',
+        default: config.api.customAiUrl || '',
+        validate: (input) => {
+          if (!input || input.trim() === '') return 'URL is required';
+          try { new URL(input); return true; } catch { return 'Invalid URL format'; }
+        }
+      },
+      {
+        type: 'password',
+        name: 'customAiKey',
+        message: 'Custom AI API key:',
+        default: config.api.customAiKey || ''
+      }
+    ]);
+    config.api.customAiUrl = customAnswers.customAiUrl;
+    config.api.customAiKey = customAnswers.customAiKey;
+  }
+
+  // STT Provider selection
+  const sttAnswers = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'sttProvider',
+      message: 'Speech-to-Text provider:',
+      default: config.api.sttProvider || 'openrouter',
+      choices: [
+        { name: 'OpenRouter Whisper (cloud)', value: 'openrouter' },
+        { name: 'Local faster-whisper (Docker)', value: 'local' },
+        { name: 'Custom OpenAI-compatible STT', value: 'custom' }
+      ]
+    }
+  ]);
+  config.api.sttProvider = sttAnswers.sttProvider;
+
+  // If Local STT selected, prompt for URL
+  if (sttAnswers.sttProvider === 'local') {
+    const localSttAnswers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'localWhisperUrl',
+        message: 'Local Whisper URL (faster-whisper):',
+        default: config.api.localWhisperUrl || 'http://localhost:7000',
+        validate: (input) => {
+          if (!input || input.trim() === '') return 'URL is required';
+          try { new URL(input); return true; } catch { return 'Invalid URL format'; }
+        }
+      }
+    ]);
+    config.api.localWhisperUrl = localSttAnswers.localWhisperUrl;
+  }
+
+  // If Custom STT selected, prompt for URL and API key
+  if (sttAnswers.sttProvider === 'custom') {
+    const customSttAnswers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'customSttUrl',
+        message: 'Custom STT API base URL:',
+        default: config.api.customSttUrl || '',
+        validate: (input) => {
+          if (!input || input.trim() === '') return 'URL is required';
+          try { new URL(input); return true; } catch { return 'Invalid URL format'; }
+        }
+      },
+      {
+        type: 'password',
+        name: 'customSttKey',
+        message: 'Custom STT API key:',
+        default: config.api.customSttKey || ''
+      }
+    ]);
+    config.api.customSttUrl = customSttAnswers.customSttUrl;
+    config.api.customSttKey = customSttAnswers.customSttKey;
+  }
+
+  // Kokoro TTS URL (if Kokoro selected)
+  if (ttsAnswers.ttsProvider === 'kokoro') {
+    const kokoroAnswers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'kokoroUrl',
+        message: 'Kokoro TTS URL:',
+        default: config.api.kokoroUrl || 'http://localhost:8880',
+        validate: (input) => {
+          if (!input || input.trim() === '') return 'URL is required';
+          try { new URL(input); return true; } catch { return 'Invalid URL format'; }
+        }
+      }
+    ]);
+    config.api.kokoroUrl = kokoroAnswers.kokoroUrl;
+  }
+
+  return config;
+}
+
+/**
  * Setup API keys with validation
  * @param {object} config - Current config
  * @returns {Promise<object>} Updated config
  */
 async function setupAPIKeys(config) {
-  // ElevenLabs API Key
-  const elevenLabsAnswers = await inquirer.prompt([
-    {
-      type: 'password',
-      name: 'apiKey',
-      message: 'ElevenLabs API key:',
-      default: config.api.elevenlabs.apiKey,
-      validate: (input) => {
-        if (!input || input.trim() === '') {
-          return 'API key is required';
-        }
-        return true;
-      }
-    }
-  ]);
-
-  const elevenLabsKey = elevenLabsAnswers.apiKey;
-  const spinner = ora('Validating ElevenLabs API key...').start();
-
-  const elevenLabsResult = await validateElevenLabsKey(elevenLabsKey);
-  if (!elevenLabsResult.valid) {
-    spinner.fail(`Invalid ElevenLabs API key: ${elevenLabsResult.error}`);
-    console.log(chalk.yellow('\n⚠️  You can continue setup, but the key may not work.'));
-    const { continueAnyway } = await inquirer.prompt([
+  // ElevenLabs API Key (only if TTS provider is ElevenLabs)
+  if (config.api.ttsProvider === 'elevenlabs') {
+    const elevenLabsAnswers = await inquirer.prompt([
       {
-        type: 'confirm',
-        name: 'continueAnyway',
-        message: 'Continue anyway?',
-        default: false
+        type: 'password',
+        name: 'apiKey',
+        message: 'ElevenLabs API key:',
+        default: config.api.elevenlabs.apiKey,
+        validate: (input) => {
+          if (!input || input.trim() === '') {
+            return 'API key is required';
+          }
+          return true;
+        }
       }
     ]);
 
-    if (!continueAnyway) {
-      throw new Error('Setup cancelled due to invalid API key');
+    const elevenLabsKey = elevenLabsAnswers.apiKey;
+    const spinner = ora('Validating ElevenLabs API key...').start();
+
+    const elevenLabsResult = await validateElevenLabsKey(elevenLabsKey);
+    if (!elevenLabsResult.valid) {
+      spinner.fail(`Invalid ElevenLabs API key: ${elevenLabsResult.error}`);
+      console.log(chalk.yellow('\n⚠️  You can continue setup, but the key may not work.'));
+      const { continueAnyway } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'continueAnyway',
+          message: 'Continue anyway?',
+          default: false
+        }
+      ]);
+
+      if (!continueAnyway) {
+        throw new Error('Setup cancelled due to invalid API key');
+      }
+
+      config.api.elevenlabs = { apiKey: elevenLabsKey, defaultVoiceId: '', validated: false };
+    } else {
+      spinner.succeed('ElevenLabs API key validated');
+      config.api.elevenlabs = { apiKey: elevenLabsKey, defaultVoiceId: '', validated: true };
     }
 
-    config.api.elevenlabs = { apiKey: elevenLabsKey, defaultVoiceId: '', validated: false };
+    // Ask for default voice ID immediately after API key
+    const voiceIdAnswers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'voiceId',
+        message: 'ElevenLabs default voice ID (for all devices):',
+        default: config.api.elevenlabs.defaultVoiceId || '',
+        validate: (input) => {
+          if (!input || input.trim() === '') {
+            return 'Voice ID is required';
+          }
+          return true;
+        }
+      }
+    ]);
+
+    const defaultVoiceId = voiceIdAnswers.voiceId;
+    const voiceSpinner = ora('Validating ElevenLabs voice ID...').start();
+
+    const voiceValidation = await validateVoiceId(elevenLabsKey, defaultVoiceId);
+    if (!voiceValidation.valid) {
+      voiceSpinner.fail(`Voice ID validation failed: ${voiceValidation.error}`);
+      console.log(chalk.yellow('\n⚠️  You can continue setup, but the voice ID may not work.'));
+      const { continueAnyway } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'continueAnyway',
+          message: 'Continue anyway?',
+          default: false
+        }
+      ]);
+
+      if (!continueAnyway) {
+        throw new Error('Setup cancelled due to invalid voice ID');
+      }
+
+      config.api.elevenlabs.defaultVoiceId = defaultVoiceId;
+    } else {
+      voiceSpinner.succeed(`Voice ID validated: ${voiceValidation.name}`);
+      config.api.elevenlabs.defaultVoiceId = defaultVoiceId;
+    }
   } else {
-    spinner.succeed('ElevenLabs API key validated');
-    config.api.elevenlabs = { apiKey: elevenLabsKey, defaultVoiceId: '', validated: true };
+    // Kokoro TTS - no API key needed, but ask for voice ID
+    console.log(chalk.gray('  Using Kokoro TTS (local, no API key required)'));
+    const kokoroVoiceAnswers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'voiceId',
+        message: 'Kokoro default voice ID (e.g., af_heart, am_adam):',
+        default: config.api.kokoroVoiceId || 'af_heart',
+        validate: (input) => {
+          if (!input || input.trim() === '') {
+            return 'Voice ID is required';
+          }
+          return true;
+        }
+      }
+    ]);
+    config.api.kokoroVoiceId = kokoroVoiceAnswers.voiceId;
   }
 
-  // Ask for default voice ID immediately after API key
-  const voiceIdAnswers = await inquirer.prompt([
-    {
-      type: 'input',
-      name: 'voiceId',
-      message: 'ElevenLabs default voice ID (for all devices):',
-      default: config.api.elevenlabs.defaultVoiceId || '',
-      validate: (input) => {
-        if (!input || input.trim() === '') {
-          return 'Voice ID is required';
-        }
-        return true;
-      }
-    }
-  ]);
-
-  const defaultVoiceId = voiceIdAnswers.voiceId;
-  const voiceSpinner = ora('Validating ElevenLabs voice ID...').start();
-
-  const voiceValidation = await validateVoiceId(elevenLabsKey, defaultVoiceId);
-  if (!voiceValidation.valid) {
-    voiceSpinner.fail(`Voice ID validation failed: ${voiceValidation.error}`);
-    console.log(chalk.yellow('\n⚠️  You can continue setup, but the voice ID may not work.'));
-    const { continueAnyway } = await inquirer.prompt([
+  // OpenRouter API Key (only if STT provider is OpenRouter or AI backend is OpenRouter)
+  if (config.api.sttProvider === 'openrouter' || config.api.aiBackend === 'openrouter') {
+    const openRouterAnswers = await inquirer.prompt([
       {
-        type: 'confirm',
-        name: 'continueAnyway',
-        message: 'Continue anyway?',
-        default: false
+        type: 'password',
+        name: 'apiKey',
+        message: 'OpenRouter API key (for Whisper STT and/or AI):',
+        default: config.api.openrouter.apiKey,
+        validate: (input) => {
+          if (!input || input.trim() === '') {
+            return 'API key is required';
+          }
+          return true;
+        }
       }
     ]);
 
-    if (!continueAnyway) {
-      throw new Error('Setup cancelled due to invalid voice ID');
-    }
+    const openRouterKey = openRouterAnswers.apiKey;
+    const openRouterSpinner = ora('Validating OpenRouter API key...').start();
 
-    config.api.elevenlabs.defaultVoiceId = defaultVoiceId;
-  } else {
-    voiceSpinner.succeed(`Voice ID validated: ${voiceValidation.name}`);
-    config.api.elevenlabs.defaultVoiceId = defaultVoiceId;
+    const openRouterResult = await validateOpenRouterKey(openRouterKey);
+    if (!openRouterResult.valid) {
+      openRouterSpinner.fail(`Invalid OpenRouter API key: ${openRouterResult.error}`);
+      console.log(chalk.yellow('\n⚠️  You can continue setup, but the key may not work.'));
+      const { continueAnyway } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'continueAnyway',
+          message: 'Continue anyway?',
+          default: false
+        }
+      ]);
+
+      if (!continueAnyway) {
+        throw new Error('Setup cancelled due to invalid API key');
+      }
+
+      config.api.openrouter = { apiKey: openRouterKey, validated: false };
+    } else {
+      openRouterSpinner.succeed('OpenRouter API key validated');
+      config.api.openrouter = { apiKey: openRouterKey, validated: true };
+    }
+  } else if (config.api.aiBackend === 'openai') {
+    // OpenAI API Key
+    const openAiAnswers = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'apiKey',
+        message: 'OpenAI API key:',
+        default: config.api.openai?.apiKey || '',
+        validate: (input) => {
+          if (!input || input.trim() === '') {
+            return 'API key is required';
+          }
+          return true;
+        }
+      }
+    ]);
+    config.api.openai = { apiKey: openAiAnswers.apiKey, validated: false };
+  } else if (config.api.aiBackend === 'custom') {
+    // Custom AI API Key (already prompted in setupProviderSelection)
+    // Just ensure the structure exists
+    if (!config.api.customAiKey) {
+      config.api.customAiKey = '';
+    }
   }
 
-  // OpenRouter API Key
-  const openRouterAnswers = await inquirer.prompt([
-    {
-      type: 'password',
-      name: 'apiKey',
-      message: 'OpenRouter API key (for Whisper STT):',
-      default: config.api.openrouter.apiKey,
-      validate: (input) => {
-        if (!input || input.trim() === '') {
-          return 'API key is required';
-        }
-        return true;
-      }
-    }
-  ]);
-
-  const openRouterKey = openRouterAnswers.apiKey;
-  const openRouterSpinner = ora('Validating OpenRouter API key...').start();
-
-  const openRouterResult = await validateOpenRouterKey(openRouterKey);
-  if (!openRouterResult.valid) {
-    openRouterSpinner.fail(`Invalid OpenRouter API key: ${openRouterResult.error}`);
-    console.log(chalk.yellow('\n⚠️  You can continue setup, but the key may not work.'));
-    const { continueAnyway } = await inquirer.prompt([
+  // Custom STT API Key (if STT provider is custom)
+  if (config.api.sttProvider === 'custom') {
+    const customSttAnswers = await inquirer.prompt([
       {
-        type: 'confirm',
-        name: 'continueAnyway',
-        message: 'Continue anyway?',
-        default: false
+        type: 'password',
+        name: 'apiKey',
+        message: 'Custom STT API key:',
+        default: config.api.customSttKey || '',
+        validate: (input) => {
+          if (!input || input.trim() === '') {
+            return 'API key is required';
+          }
+          return true;
+        }
       }
     ]);
+    config.api.customSttKey = customSttAnswers.apiKey;
+  }
 
-    if (!continueAnyway) {
-      throw new Error('Setup cancelled due to invalid API key');
-    }
-
-    config.api.openrouter = { apiKey: openRouterKey, validated: false };
-  } else {
-    openRouterSpinner.succeed('OpenRouter API key validated');
-    config.api.openrouter = { apiKey: openRouterKey, validated: true };
+  // Provider connectivity validation (skip if --skip-validation flag)
+  if (!process.argv.includes('--skip-validation')) {
+    await setupProviderValidation(config);
   }
 
   return config;
+}
+
+/**
+ * Validate provider connectivity
+ * @param {object} config - Current config
+ * @returns {Promise<void>}
+ */
+async function setupProviderValidation(config) {
+  console.log(chalk.bold('\n🔍 Provider Connectivity Validation'));
+
+  // Validate Ollama if selected as AI backend
+  if (config.api.aiBackend === 'ollama') {
+    const spinner = ora(`Checking Ollama at ${config.api.ollamaUrl}...`).start();
+    try {
+      const result = await validateOllama(config.api.ollamaUrl);
+      if (result.valid) {
+        spinner.succeed(`Ollama connected (v${result.version || 'unknown'})`);
+      } else {
+        spinner.warn(`Ollama validation failed: ${result.error}`);
+        console.log(chalk.yellow('  ⚠️  You can continue setup, but Ollama may not be reachable.'));
+      }
+    } catch (error) {
+      spinner.warn(`Ollama validation error: ${error.message}`);
+      console.log(chalk.yellow('  ⚠️  You can continue setup, but Ollama may not be reachable.'));
+    }
+  }
+
+  // Validate Kokoro TTS if selected
+  if (config.api.ttsProvider === 'kokoro') {
+    const spinner = ora(`Checking Kokoro TTS at ${config.api.kokoroUrl}...`).start();
+    try {
+      const result = await validateKokoro(config.api.kokoroUrl);
+      if (result.valid) {
+        spinner.succeed('Kokoro TTS connected');
+      } else {
+        spinner.warn(`Kokoro TTS validation failed: ${result.error}`);
+        console.log(chalk.yellow('  ⚠️  You can continue setup, but Kokoro TTS may not be reachable.'));
+      }
+    } catch (error) {
+      spinner.warn(`Kokoro TTS validation error: ${error.message}`);
+      console.log(chalk.yellow('  ⚠️  You can continue setup, but Kokoro TTS may not be reachable.'));
+    }
+  }
+
+  // Validate OpenAI-compatible APIs if selected
+  if (config.api.aiBackend === 'custom' && config.api.customAiUrl) {
+    const spinner = ora(`Checking Custom AI API at ${config.api.customAiUrl}...`).start();
+    try {
+      const result = await validateOpenAICompat(config.api.customAiUrl, config.api.customAiKey);
+      if (result.valid) {
+        spinner.succeed('Custom AI API connected');
+      } else {
+        spinner.warn(`Custom AI API validation failed: ${result.error}`);
+        console.log(chalk.yellow('  ⚠️  You can continue setup, but the API may not be reachable.'));
+      }
+    } catch (error) {
+      spinner.warn(`Custom AI API validation error: ${error.message}`);
+      console.log(chalk.yellow('  ⚠️  You can continue setup, but the API may not be reachable.'));
+    }
+  }
+
+  if (config.api.sttProvider === 'custom' && config.api.customSttUrl) {
+    const spinner = ora(`Checking Custom STT API at ${config.api.customSttUrl}...`).start();
+    try {
+      const result = await validateOpenAICompat(config.api.customSttUrl, config.api.customSttKey);
+      if (result.valid) {
+        spinner.succeed('Custom STT API connected');
+      } else {
+        spinner.warn(`Custom STT API validation failed: ${result.error}`);
+        console.log(chalk.yellow('  ⚠️  You can continue setup, but the API may not be reachable.'));
+      }
+    } catch (error) {
+      spinner.warn(`Custom STT API validation error: ${error.message}`);
+      console.log(chalk.yellow('  ⚠️  You can continue setup, but the API may not be reachable.'));
+    }
+  }
+
+  // Validate local Whisper if selected
+  if (config.api.sttProvider === 'local') {
+    const spinner = ora(`Checking Local Whisper at ${config.api.localWhisperUrl}...`).start();
+    try {
+      const result = await validateOpenAICompat(config.api.localWhisperUrl);
+      if (result.valid) {
+        spinner.succeed('Local Whisper (faster-whisper) connected');
+      } else {
+        spinner.warn(`Local Whisper validation failed: ${result.error}`);
+        console.log(chalk.yellow('  ⚠️  You can continue setup, but Local Whisper may not be reachable.'));
+      }
+    } catch (error) {
+      spinner.warn(`Local Whisper validation error: ${error.message}`);
+      console.log(chalk.yellow('  ⚠️  You can continue setup, but Local Whisper may not be reachable.'));
+    }
+  }
 }
 
 /**
@@ -970,8 +1322,32 @@ async function setupDevice(config) {
     },
     {
       type: 'input',
-      name: 'voiceId',
+      name: 'elevenlabsVoiceId',
       message: 'ElevenLabs voice ID:',
+      default: existingDevice?.elevenlabsVoiceId || config.api.elevenlabs.defaultVoiceId || '',
+      validate: (input) => {
+        if (!input || input.trim() === '') {
+          return 'Voice ID is required';
+        }
+        return true;
+      }
+    },
+    {
+      type: 'input',
+      name: 'kokoroVoiceId',
+      message: 'Kokoro voice ID (e.g., af_heart, am_adam):',
+      default: existingDevice?.kokoroVoiceId || config.api.kokoroVoiceId || 'af_heart',
+      validate: (input) => {
+        if (!input || input.trim() === '') {
+          return 'Voice ID is required';
+        }
+        return true;
+      }
+    },
+    {
+      type: 'input',
+      name: 'voiceId',
+      message: 'ElevenLabs voice ID (legacy):',
       default: existingDevice?.voiceId || config.api.elevenlabs.defaultVoiceId || '',
       validate: (input) => {
         if (!input || input.trim() === '') {
@@ -994,29 +1370,33 @@ async function setupDevice(config) {
     }
   ]);
 
-  // Validate voice ID with ElevenLabs API
-  const voiceSpinner = ora('Validating ElevenLabs voice ID...').start();
-  const voiceValidation = await validateVoiceId(config.api.elevenlabs.apiKey, answers.voiceId);
+  // Validate voice ID based on TTS provider
+  if (config.api.ttsProvider === 'elevenlabs') {
+    const voiceSpinner = ora('Validating ElevenLabs voice ID...').start();
+    const voiceValidation = await validateVoiceId(config.api.elevenlabs.apiKey, answers.elevenlabsVoiceId);
 
-  if (!voiceValidation.valid) {
-    voiceSpinner.fail(`Voice ID validation failed: ${voiceValidation.error}`);
-    console.log(chalk.yellow('\n⚠️  You can continue setup, but the voice ID may not work.'));
-    const { continueAnyway } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'continueAnyway',
-        message: 'Continue anyway?',
-        default: false
+    if (!voiceValidation.valid) {
+      voiceSpinner.fail(`Voice ID validation failed: ${voiceValidation.error}`);
+      console.log(chalk.yellow('\n⚠️  You can continue setup, but the voice ID may not work.'));
+      const { continueAnyway } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'continueAnyway',
+          message: 'Continue anyway?',
+          default: false
+        }
+      ]);
+
+      if (!continueAnyway) {
+        // Let user re-enter voice ID
+        console.log(chalk.gray('\nReturning to device setup...'));
+        return setupDevice(config);
       }
-    ]);
-
-    if (!continueAnyway) {
-      // Let user re-enter voice ID
-      console.log(chalk.gray('\nReturning to device setup...'));
-      return setupDevice(config);
+    } else {
+      voiceSpinner.succeed(`Voice ID validated: ${voiceValidation.name}`);
     }
   } else {
-    voiceSpinner.succeed(`Voice ID validated: ${voiceValidation.name}`);
+    console.log(chalk.gray(`  Using Kokoro TTS voice: ${answers.kokoroVoiceId} (no API validation needed)`));
   }
 
   const device = {
@@ -1024,7 +1404,9 @@ async function setupDevice(config) {
     extension: answers.extension,
     authId: answers.authId,
     password: answers.password,
-    voiceId: answers.voiceId,
+    elevenlabsVoiceId: answers.elevenlabsVoiceId,
+    kokoroVoiceId: answers.kokoroVoiceId,
+    voiceId: answers.voiceId, // legacy field for backward compat
     prompt: answers.prompt
   };
 

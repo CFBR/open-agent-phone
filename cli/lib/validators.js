@@ -1,6 +1,208 @@
 import axios from 'axios';
 
 /**
+ * Validate Ollama server connectivity
+ * @param {string} url - Ollama base URL
+ * @returns {Promise<{valid: boolean, error?: string, version?: string}>} Validation result
+ */
+export async function validateOllama(url) {
+  if (!url || url.trim() === '') {
+    return {
+      valid: false,
+      error: 'URL cannot be empty'
+    };
+  }
+
+  try {
+    const response = await axios.get(`${url.replace(/\/$/, '')}/api/version`, {
+      timeout: 5000
+    });
+
+    if (response.status === 200) {
+      return {
+        valid: true,
+        version: response.data.version
+      };
+    }
+
+    return {
+      valid: false,
+      error: `Unexpected status: ${response.status}`
+    };
+  } catch (error) {
+    if (error.response) {
+      return {
+        valid: false,
+        error: `API error: ${error.response.status} ${error.response.statusText}`
+      };
+    }
+
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      return {
+        valid: false,
+        error: 'Connection timeout - check if Ollama is running'
+      };
+    }
+
+    if (error.code === 'ECONNREFUSED') {
+      return {
+        valid: false,
+        error: 'Connection refused - Ollama server not running'
+      };
+    }
+
+    return {
+      valid: false,
+      error: `Network error: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Validate Kokoro TTS server connectivity
+ * @param {string} url - Kokoro TTS base URL
+ * @returns {Promise<{valid: boolean, error?: string}>} Validation result
+ */
+export async function validateKokoro(url) {
+  if (!url || url.trim() === '') {
+    return {
+      valid: false,
+      error: 'URL cannot be empty'
+    };
+  }
+
+  try {
+    const response = await axios.post(
+      `${url.replace(/\/$/, '')}/v1/audio/speech`,
+      {
+        model: 'kokoro',
+        input: 'test',
+        voice: 'af_heart',
+        response_format: 'wav'
+      },
+      {
+        timeout: 10000
+      }
+    );
+
+    if (response.status === 200 && response.data) {
+      return { valid: true };
+    }
+
+    return {
+      valid: false,
+      error: `Unexpected status: ${response.status}`
+    };
+  } catch (error) {
+    if (error.response) {
+      if (error.response.status === 404) {
+        return {
+          valid: false,
+          error: 'Endpoint not found - is faster-whisper running?'
+        };
+      }
+      return {
+        valid: false,
+        error: `API error: ${error.response.status} ${error.response.statusText}`
+      };
+    }
+
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      return {
+        valid: false,
+        error: 'Connection timeout - check if Kokoro TTS is running'
+      };
+    }
+
+    if (error.code === 'ECONNREFUSED') {
+      return {
+        valid: false,
+        error: 'Connection refused - Kokoro TTS server not running'
+      };
+    }
+
+    return {
+      valid: false,
+      error: `Network error: ${error.message}`
+    };
+  }
+}
+
+/**
+ * Validate OpenAI-compatible API server connectivity
+ * @param {string} url - API base URL
+ * @param {string} apiKey - API key (optional)
+ * @returns {Promise<{valid: boolean, error?: string}>} Validation result
+ */
+export async function validateOpenAICompat(url, apiKey = '') {
+  if (!url || url.trim() === '') {
+    return {
+      valid: false,
+      error: 'URL cannot be empty'
+    };
+  }
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const response = await axios.get(`${url.replace(/\/$/, '')}/v1/models`, {
+      headers,
+      timeout: 10000
+    });
+
+    if (response.status === 200) {
+      return { valid: true };
+    }
+
+    return {
+      valid: false,
+      error: `Unexpected status: ${response.status}`
+    };
+  } catch (error) {
+    if (error.response) {
+      if (error.response.status === 401) {
+        return {
+          valid: false,
+          error: 'Invalid API key (401 Unauthorized)'
+        };
+      }
+      if (error.response.status === 404) {
+        return {
+          valid: false,
+          error: 'Endpoint not found - check URL path'
+        };
+      }
+      return {
+        valid: false,
+        error: `API error: ${error.response.status} ${error.response.statusText}`
+      };
+    }
+
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      return {
+        valid: false,
+        error: 'Connection timeout'
+      };
+    }
+
+    if (error.code === 'ECONNREFUSED') {
+      return {
+        valid: false,
+        error: 'Connection refused - server not running'
+      };
+    }
+
+    return {
+      valid: false,
+      error: `Network error: ${error.message}`
+    };
+  }
+}
+
+/**
  * Validate ElevenLabs API key by making a test request
  * @param {string} apiKey - ElevenLabs API key
  * @returns {Promise<{valid: boolean, error?: string}>} Validation result
