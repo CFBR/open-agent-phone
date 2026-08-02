@@ -1,6 +1,7 @@
 /**
  * OpenRouter Whisper API Client for Speech-to-Text
  * Uses OpenRouter's OpenAI-compatible endpoint for Whisper
+ * Supports multiple STT providers: openrouter (default), local (faster-whisper), custom
  * Converts audio buffers (L16 PCM from FreeSWITCH) to text
  */
 
@@ -9,16 +10,23 @@ const WaveFile = require("wavefile").WaveFile;
 const fs = require("fs");
 const path = require("path");
 
-// Lazy-initialized OpenRouter client
-let openai = null;
+// Lazy-initialized clients
+let openaiClient = null;
+let localClient = null;
+let customClient = null;
+
+const STT_PROVIDER = (process.env.STT_PROVIDER || 'openrouter').toLowerCase();
+const LOCAL_WHISPER_URL = process.env.LOCAL_WHISPER_URL || 'http://localhost:7000';
+const CUSTOM_STT_URL = process.env.CUSTOM_STT_URL || '';
+const CUSTOM_STT_API_KEY = process.env.CUSTOM_STT_API_KEY || '';
 
 function getOpenAIClient() {
-  if (!openai) {
+  if (!openaiClient) {
     if (!process.env.OPENROUTER_API_KEY) {
-      console.warn("[WHISPER] OPENROUTER_API_KEY not set - STT will not work");
+      console.warn("[WHISPER] OPENROUTER_API_KEY not set - OpenRouter STT will not work");
       return null;
     }
-    openai = new OpenAI({
+    openaiClient = new OpenAI({
       baseURL: "https://openrouter.ai/api/v1",
       apiKey: process.env.OPENROUTER_API_KEY,
       defaultHeaders: {
@@ -27,7 +35,31 @@ function getOpenAIClient() {
       }
     });
   }
-  return openai;
+  return openaiClient;
+}
+
+function getLocalClient() {
+  if (!localClient) {
+    localClient = new OpenAI({
+      baseURL: LOCAL_WHISPER_URL,
+      apiKey: 'local',  // faster-whisper accepts any key
+    });
+  }
+  return localClient;
+}
+
+function getCustomClient() {
+  if (!customClient) {
+    if (!CUSTOM_STT_URL) {
+      console.warn("[WHISPER] CUSTOM_STT_URL not set - Custom STT will not work");
+      return null;
+    }
+    customClient = new OpenAI({
+      baseURL: CUSTOM_STT_URL,
+      apiKey: CUSTOM_STT_API_KEY,
+    });
+  }
+  return customClient;
 }
 
 /**
@@ -49,7 +81,7 @@ function pcmToWav(pcmBuffer, sampleRate = 8000) {
 }
 
 /**
- * Transcribe audio using OpenAI Whisper API
+ * Transcribe audio using configured STT provider
  * @param {Buffer} audioBuffer - Audio data (either WAV or raw PCM)
  * @param {Object} options - Transcription options
  * @param {string} options.format - Input format: "wav" or "pcm" (default: "pcm")
@@ -64,11 +96,6 @@ async function transcribe(audioBuffer, options = {}) {
     language = "en"
   } = options;
 
-  const client = getOpenAIClient();
-  if (!client) {
-    throw new Error("OpenRouter API key not configured");
-  }
-
   // Convert PCM to WAV if needed
   let wavBuffer;
   if (format === "pcm") {
@@ -82,15 +109,46 @@ async function transcribe(audioBuffer, options = {}) {
   fs.writeFileSync(tempFile, wavBuffer);
 
   try {
-    const transcription = await client.audio.transcriptions.create({
-      file: fs.createReadStream(tempFile),
-      model: "openai/whisper-1",
-      language: language,
-      response_format: "text"
-    });
+    let transcription;
+    
+    if (STT_PROVIDER === 'local') {
+      const client = getLocalClient();
+      if (!client) {
+        throw new Error("Local Whisper (faster-whisper) not configured - LOCAL_WHISPER_URL not set");
+      }
+      transcription = await client.audio.transcriptions.create({
+        file: fs.createReadStream(tempFile),
+        model: "whisper-1",
+        language: language,
+        response_format: "text"
+      });
+    } else if (STT_PROVIDER === 'custom') {
+      const client = getCustomClient();
+      if (!client) {
+        throw new Error("Custom STT not configured - CUSTOM_STT_URL not set");
+      }
+      transcription = await client.audio.transcriptions.create({
+        file: fs.createReadStream(tempFile),
+        model: "whisper-1",
+        language: language,
+        response_format: "text"
+      });
+    } else {
+      // Default: OpenRouter
+      const client = getOpenAIClient();
+      if (!client) {
+        throw new Error("OpenRouter API key not configured");
+      }
+      transcription = await client.audio.transcriptions.create({
+        file: fs.createReadStream(tempFile),
+        model: "openai/whisper-1",
+        language: language,
+        response_format: "text"
+      });
+    }
 
     const timestamp = new Date().toISOString();
-    console.log("[" + timestamp + "] WHISPER Transcribed: " + transcription.substring(0, 100) + (transcription.length > 100 ? "..." : ""));
+    console.log("[" + timestamp + "] WHISPER Transcribed (" + STT_PROVIDER + "): " + transcription.substring(0, 100) + (transcription.length > 100 ? "..." : ""));
 
     return transcription;
   } finally {
@@ -104,10 +162,16 @@ async function transcribe(audioBuffer, options = {}) {
 }
 
 /**
- * Check if Whisper API is configured and available
- * @returns {boolean} True if API key is set
+ * Check if STT is configured and available
+ * @returns {boolean} True if any provider is configured
  */
 function isAvailable() {
+  if (STT_PROVIDER === 'local') {
+    return !!LOCAL_WHISPER_URL;
+  }
+  if (STT_PROVIDER === 'custom') {
+    return !!CUSTOM_STT_URL;
+  }
   return !!process.env.OPENROUTER_API_KEY;
 }
 
