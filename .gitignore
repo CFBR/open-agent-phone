@@ -2,6 +2,11 @@
 node_modules/
 package-lock.json
 
+# Tooling state (local only - not for the public repo)
+.opencode/
+.omo/run-continuation/
+.omo/boulder.json
+
 # Environment files (contain secrets!)
 .env
 .env.local

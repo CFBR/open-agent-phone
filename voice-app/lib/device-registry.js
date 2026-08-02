@@ -25,9 +25,24 @@ const MORPHEUS_DEFAULT = {
   extension: '9000',
   authId: 'Au0XZPTpJY',
   password: 'DGHwMW6v25',
-  voiceId: 'JAgnJveGGUh4qy4kh6dF',
+  elevenlabsVoiceId: 'JAgnJveGGUh4qy4kh6dF',
+  kokoroVoiceId: 'af_heart',
+  voiceId: 'JAgnJveGGUh4qy4kh6dF', // legacy fallback
   prompt: 'You are Morpheus, Chuck\'s principal AI assistant. You are meticulous, systematic, and excellence-driven. Keep voice responses under 40 words.'
 };
+
+/**
+ * Get the correct voice ID for a device based on TTS provider
+ * @param {object} device - Device object
+ * @returns {string} Voice ID for the current TTS provider
+ */
+function getVoiceIdForDevice(device) {
+  const ttsProvider = (process.env.TTS_PROVIDER || 'elevenlabs').toLowerCase();
+  if (ttsProvider === 'kokoro') {
+    return device.kokoroVoiceId || device.voiceId || 'af_heart';
+  }
+  return device.elevenlabsVoiceId || device.voiceId || 'JAgnJveGGUh4qy4kh6dF';
+}
 
 class DeviceRegistry {
   constructor() {
@@ -118,6 +133,20 @@ class DeviceRegistry {
       device = this.getByName(identifier);
     }
     return device;
+  }
+
+  /**
+   * Get device with resolved voice ID for current TTS provider
+   * @param {string} identifier - Extension or name
+   * @returns {object|null} Device with resolved voiceId field
+   */
+  getWithVoiceId(identifier) {
+    const device = this.get(identifier);
+    if (!device) return null;
+    return {
+      ...device,
+      voiceId: getVoiceIdForDevice(device)
+    };
   }
 
   getAll() {

@@ -154,15 +154,25 @@ services:
       - drachtio
       - freeswitch
 
-  # Local TTS engine (Kokoro-82M via Kokoro-FastAPI)
-  # Only included when TTS provider is set to kokoro
-  # ~2-3GB RAM on CPU. Remove this service if using only ElevenLabs.
-  # kokoro-tts:
-  #   image: ghcr.io/remsky/kokoro-fastapi-cpu:latest${platformLine}
-  #   container_name: kokoro-tts
-  #   restart: unless-stopped
-  #   network_mode: host
-  #   # Port 8880: HTTP API for OpenAI-compatible /v1/audio/speech
+  # Local TTS engine (Kokoro-82M via Kokoro-FastAPI) - Only included when TTS_PROVIDER=kokoro
+  ${config.ttsProvider === 'kokoro' ? `
+  kokoro-tts:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest${platformLine}
+    container_name: kokoro-tts
+    restart: unless-stopped
+    network_mode: host
+    # Port 8880: HTTP API for OpenAI-compatible /v1/audio/speech
+  ` : ''}
+
+  # Local STT engine (faster-whisper) - Only included when STT_PROVIDER=local
+  ${config.sttProvider === 'local' ? `
+  faster-whisper:
+    image: ghcr.io/sylvain/fastwhisper:latest${platformLine}
+    container_name: faster-whisper
+    restart: unless-stopped
+    network_mode: host
+    # Port 7000: HTTP API for OpenAI-compatible /v1/audio/transcriptions
+  ` : ''}
 `;
 }
 
@@ -222,25 +232,44 @@ export function generateEnvFile(config) {
     `SIP_DOMAIN=${config.sip.domain}`,
     `SIP_REGISTRAR=${config.sip.registrar}`,
     '',
-    '# Default extension (primary device)',
-    `SIP_EXTENSION=${config.devices[0].extension}`,
-    `SIP_AUTH_ID=${config.devices[0].authId}`,
-    `SIP_PASSWORD=${config.devices[0].password}`,
-    '',
+    // Device-specific SIP settings (only if devices configured)
+    ...(config.devices.length > 0 ? [
+      '# Default extension (primary device)',
+      `SIP_EXTENSION=${config.devices[0].extension}`,
+      `SIP_AUTH_ID=${config.devices[0].authId}`,
+      `SIP_PASSWORD=${config.devices[0].password}`,
+      '',
+      '# ElevenLabs TTS',
+      `ELEVENLABS_API_KEY=${config.api.elevenlabs.apiKey}`,
+      `ELEVENLABS_VOICE_ID=${config.devices[0].elevenlabsVoiceId || config.devices[0].voiceId}`,
+      '',
+    ] : [
+      '# ElevenLabs TTS',
+      `ELEVENLABS_API_KEY=${config.api.elevenlabs.apiKey}`,
+      `ELEVENLABS_VOICE_ID=`,
+      '',
+    ]),
     '# Claude API Server',
     `CLAUDE_API_URL=${claudeApiUrl}`,
-    '',
-    '# ElevenLabs TTS',
-    `ELEVENLABS_API_KEY=${config.api.elevenlabs.apiKey}`,
-    `ELEVENLABS_VOICE_ID=${config.devices[0].voiceId}`,
     '',
     '# OpenRouter (Whisper STT)',
     `OPENROUTER_API_KEY=${config.api.openrouter.apiKey}`,
     '',
     '# TTS Provider (elevenlabs or kokoro)',
-    'TTS_PROVIDER=elevenlabs',
+    `TTS_PROVIDER=${config.api.ttsProvider || 'elevenlabs'}`,
     '# Kokoro TTS URL (only used when TTS_PROVIDER=kokoro)',
-    'KOKORO_TTS_URL=http://127.0.0.1:8880',
+    `KOKORO_TTS_URL=${config.api.kokoroUrl || 'http://127.0.0.1:8880'}`,
+    '# Local Whisper URL (only used when STT_PROVIDER=local)',
+    `LOCAL_WHISPER_URL=${config.api.localWhisperUrl || 'http://127.0.0.1:7000'}`,
+    '',
+    '# AI Backend Configuration',
+    `AI_BACKEND=${config.api.aiBackend || 'ollama'}`,
+    `OLLAMA_URL=${config.api.ollamaUrl || 'http://localhost:11434'}`,
+    `OLLAMA_MODEL=${config.api.ollamaModel || 'llama3.2:3b'}`,
+    '',
+    '# STT Provider Configuration',
+    `STT_PROVIDER=${config.api.sttProvider || 'openrouter'}`,
+    `CUSTOM_STT_URL=${config.api.customSttUrl || ''}`,
     '',
     '# Application Settings',
     `HTTP_PORT=${config.server.httpPort}`,

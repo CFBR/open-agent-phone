@@ -134,8 +134,8 @@ router.post('/outbound-call', async function(req, res) {
     // Look up device configuration
     var deviceConfig = null;
     if (deviceParam && deviceRegistry) {
-      // Use get() which tries extension first, then name (case-insensitive)
-      deviceConfig = deviceRegistry.get(deviceParam);
+      // Use getWithVoiceId() which resolves voiceId based on TTS provider
+      deviceConfig = deviceRegistry.getWithVoiceId(deviceParam);
 
       if (deviceConfig) {
         logger.info('Device found for outbound call', {
