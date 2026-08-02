@@ -315,10 +315,10 @@ async function handleInvite(req, res, options) {
   const callerId = extractCallerId(req);
   const dialedExt = extractDialedExtension(req);
 
-  // Look up device config using deviceRegistry.get() (works with name OR extension)
+  // Look up device config using deviceRegistry.getWithVoiceId() (works with name OR extension)
   let deviceConfig = null;
   if (deviceRegistry && dialedExt) {
-    deviceConfig = deviceRegistry.get(dialedExt);
+    deviceConfig = deviceRegistry.getWithVoiceId(dialedExt);
     if (deviceConfig) {
       console.log('[' + new Date().toISOString() + '] CALL Device matched: ' + deviceConfig.name + ' (ext ' + dialedExt + ')');
     } else {
