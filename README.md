@@ -308,6 +308,45 @@ The voice-app exposes these endpoints on port 3000:
 
 See [Outbound API Reference](voice-app/README-OUTBOUND.md) for details.
 
+### API Authentication (optional)
+
+The voice-app HTTP API can be protected with a shared secret. Set `VOICE_API_TOKEN` in your `.env` and every `/api/*` request must present it — via an `X-API-Token` header or a standard `Authorization: Bearer <token>` header:
+
+```bash
+curl -H "Authorization: Bearer $VOICE_API_TOKEN" http://localhost:3000/api/devices
+```
+
+- **Leave `VOICE_API_TOKEN` unset (default)** — the API stays open, fully backward compatible
+- **Set it** — requests without a valid token get `401 Unauthorized`
+- Comparison is constant-time to prevent timing attacks
+
+This prevents anyone on your network from triggering outbound calls or running Claude queries against the voice app.
+
+## Voice-App Architecture
+
+The voice-app is built from small, focused modules:
+
+| Module | Purpose |
+|--------|---------|
+| `sip-handler.js` | Inbound call handling via drachtio SRF |
+| `multi-registrar.js` | Multi-extension SIP registration |
+| `conversation-loop.js` | Core conversation flow (STT → AI → TTS) |
+| `audio-fork.js` | WebSocket audio streaming |
+| `tts-service.js` | TTS providers (ElevenLabs / Kokoro) with caching |
+| `tts-cache.js` | TTS response cache |
+| `whisper-client.js` | STT via any OpenAI-compatible endpoint |
+| `api-auth.js` | Shared-secret auth for `/api/*` |
+| `voice-response.js` | Response normalization |
+| `audio-urls.js` | Audio file URL helpers |
+| `audio-cleanup.js` | Recording cleanup |
+| `outbound-handler.js` / `outbound-session.js` | Outbound call logic |
+| `outbound-routes.js` / `query-routes.js` | HTTP API endpoints |
+| `retry.js` | Connection retry logic |
+| `device-registry.js` | Multi-device management |
+| `pcm-stats.js` | Audio statistics utilities |
+
+The `claude-api-server` wraps your AI backend and includes a `session-store.js` for per-call session management (session-per-call for multi-turn context).
+
 ## Troubleshooting
 
 ### Quick Diagnostics
@@ -342,13 +381,20 @@ claude-phone config path    # Show file location
 ## Development
 
 ```bash
-# Run tests
+# Run all tests (CLI, API server, voice-app)
 npm test
+
+# Run test suites individually
+npm run test:cli
+npm run test:api-server   # claude-api-server (session store, structured output)
+npm run test:voice-app    # voice-app (auth, TTS cache, retry, conversation, ...)
 
 # Lint
 npm run lint
 npm run lint:fix
 ```
+
+Both the voice-app and claude-api-server ship with test suites (`node --test`). The precommit hook runs ESLint across the repo.
 
 ## Documentation
 

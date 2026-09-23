@@ -1,7 +1,7 @@
 {
   "name": "claude-phone-voice-app",
   "version": "1.0.0",
-  "description": "Voice interface for Claude Code via SIP/3CX",
+  "description": "Voice interface for any AI agent via SIP/3CX — open-source first, self-hosted",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
