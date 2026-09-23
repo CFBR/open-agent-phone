@@ -11,10 +11,10 @@ var Mrf = require("drachtio-fsmrf");
 var httpServerModule = require("./lib/http-server");
 var createHttpServer = httpServerModule.createHttpServer;
 var cleanupOldFiles = httpServerModule.cleanupOldFiles;
+var audioUrls = require("./lib/audio-urls");
 var AudioForkServer = require("./lib/audio-fork").AudioForkServer;
 var sipHandler = require("./lib/sip-handler");
 var handleInvite = sipHandler.handleInvite;
-var extractCallerId = sipHandler.extractCallerId;
 var whisperClient = require("./lib/whisper-client");
 var claudeBridge = require("./lib/claude-bridge");
 var ttsService = require("./lib/tts-service");
@@ -62,6 +62,7 @@ var config = {
     expiry: parseInt(process.env.SIP_EXPIRY) || 3600
   },
   external_ip: process.env.EXTERNAL_IP || "10.70.7.81",
+  http_host: process.env.HTTP_HOST || "127.0.0.1",
   http_port: parseInt(process.env.HTTP_PORT) || 3000,
   ws_port: parseInt(process.env.WS_PORT) || 3001,
   audio_dir: process.env.AUDIO_DIR || "/tmp/voice-audio"
@@ -178,7 +179,21 @@ function initializeServers() {
   }
 
   // HTTP server for TTS audio
-  httpServer = createHttpServer(config.audio_dir, config.http_port);
+  audioUrls.setHttpPort(config.http_port);
+  if (config.http_host) audioUrls.setHttpHost(config.http_host);
+  httpServer = createHttpServer(config.audio_dir, config.http_port, {
+    getHealthInfo: function() {
+      return {
+        drachtio: drachtioConnected,
+        freeswitch: freeswitchConnected,
+        ready: isReady,
+        devices: Object.keys(deviceRegistry.getAllDevices()).length,
+        claudeApiUrl: process.env.CLAUDE_API_URL || 'http://localhost:3333',
+        ttsProvider: ttsService.getProvider ? ttsService.getProvider() : undefined,
+        sttProvider: process.env.STT_PROVIDER || 'openrouter'
+      };
+    }
+  });
   console.log("[" + new Date().toISOString() + "] HTTP Server started on port " + config.http_port);
 
   // WebSocket server for audio fork
@@ -194,6 +209,13 @@ function initializeServers() {
   // TTS service
   ttsService.setAudioDir(config.audio_dir);
   console.log("[" + new Date().toISOString() + "] TTS Service configured");
+
+  // ========== API AUTH (optional shared secret) ==========
+  var apiAuth = require("./lib/api-auth").createApiAuthMiddleware();
+  if (require("./lib/api-auth").isAuthEnabled()) {
+    console.log("[" + new Date().toISOString() + "] API token authentication ENABLED (VOICE_API_TOKEN set)");
+  }
+  httpServer.app.use("/api", apiAuth);
 
   // ========== OUTBOUND CALLING ROUTES ==========
   setupOutboundRoutes({
@@ -221,10 +243,13 @@ function initializeServers() {
   // Finalize HTTP server
   httpServer.finalize();
 
-  // Cleanup old files periodically
-  setInterval(function() {
-    cleanupOldFiles(config.audio_dir, 5 * 60 * 1000);
-  }, 60 * 1000);
+  // Single periodic cleanup of generated TTS / uploaded audio files.
+  // (http-server and tts-service no longer run their own loops to avoid
+  // competing cleanup passes over the same directory.)
+  var cleanupTimer = setInterval(function() {
+    cleanupOldFiles(config.audio_dir, httpServerModule.FILE_MAX_AGE);
+  }, httpServerModule.CLEANUP_INTERVAL);
+  if (cleanupTimer.unref) cleanupTimer.unref();
 }
 
 // Check ready state

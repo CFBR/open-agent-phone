@@ -28,7 +28,6 @@ const ttsService = require('./tts-service');
 async function initiateOutboundCall(srf, mediaServer, options) {
   const {
     to,
-    message,
     callerId,
     timeoutSeconds = 30,
     deviceConfig = null
@@ -58,7 +57,6 @@ async function initiateOutboundCall(srf, mediaServer, options) {
     const isExternal = to.startsWith('+');
     const phoneNumber = isExternal ? '9' + to.replace(/^\+1?/, '') : to;
     const sipTrunkHost = process.env.SIP_TRUNK_HOST || '10.70.7.50';
-    const externalIp = process.env.EXTERNAL_IP || '10.70.7.81';
     const defaultCallerId = callerId || process.env.DEFAULT_CALLER_ID || '+15551234567';
 
     // SIP Authentication for 3CX extension registration
@@ -108,11 +106,10 @@ async function initiateOutboundCall(srf, mediaServer, options) {
     }
 
     let isRinging = false;
-    let callAnswered = false;
 
     // Create the outbound call (returns dialog directly, not { uas, uac })
     const uac = await srf.createUAC(sipUri, uacOptions, {
-      cbRequest: function(err, req) {
+      cbRequest: function(err, _req) {
         // Called when INVITE is sent
         if (err) {
           logger.error('INVITE send failed', { callId, error: err.message });
@@ -136,7 +133,6 @@ async function initiateOutboundCall(srf, mediaServer, options) {
     });
 
     // STEP 3: Call was answered! Connect endpoint with remote SDP
-    callAnswered = true;
     const latency = Date.now() - startTime;
 
     logger.info('Call answered', {

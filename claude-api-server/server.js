@@ -113,8 +113,19 @@ const apiKeys = Object.keys(claudeEnv).filter(k =>
 );
 console.log('[STARTUP] API keys loaded:', apiKeys.join(', '));
 
-// Session storage: callId -> claudeSessionId
-const sessions = new Map();
+// Session storage: callId -> claudeSessionId (and conversation history for
+// non-Claude backends). See session-store.js for eviction behavior.
+const { SessionStore } = require('./session-store');
+const sessionStore = new SessionStore({
+  idleTtlMs: parseInt(process.env.SESSION_IDLE_TTL_MS, 10) || undefined,
+  sweepIntervalMs: parseInt(process.env.SESSION_SWEEP_INTERVAL_MS, 10) || undefined,
+});
+sessionStore.startSweep();
+const sessions = sessionStore.sessions;
+const chatHistories = sessionStore.histories;
+
+function touchSession(callId) { sessionStore.touch(callId); }
+function endSessionStorage(callId) { return sessionStore.end(callId); }
 
 // Model selection - Sonnet for balanced speed/quality
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
@@ -139,10 +150,6 @@ console.log(`[STARTUP] AI backend: ${AI_BACKEND}`);
 if (AI_BACKEND === 'ollama') {
   console.log(`[STARTUP] Ollama URL: ${OLLAMA_URL}, model: ${OLLAMA_MODEL}`);
 }
-
-// Message history for non-Claude backends (maintains conversation context)
-// Maps callId -> Array<{role, content}>
-const chatHistories = new Map();
 
 function parseClaudeStdout(stdout) {
   // Claude Code CLI may output JSONL; when it does, extract the `result` message.
@@ -185,6 +192,7 @@ async function queryClaude({ fullPrompt, callId, timestamp }) {
   ];
 
   if (callId) {
+    touchSession(callId);
     if (sessions.has(callId)) {
       args.push('--resume', callId);
       console.log(`[${timestamp}] Resuming session: ${callId}`);
@@ -276,7 +284,7 @@ function httpRequest(url, options, body) {
 /**
  * Query any OpenAI-compatible chat completion API.
  */
-async function queryOpenAI({ fullPrompt, callId, timestamp, baseURL, apiKey, model }) {
+async function queryOpenAI({ fullPrompt, callId, baseURL, apiKey, model }) {
   const startTime = Date.now();
 
   // Build message history for conversation context
@@ -285,6 +293,7 @@ async function queryOpenAI({ fullPrompt, callId, timestamp, baseURL, apiKey, mod
     messages = chatHistories.get(callId);
   }
   messages.push({ role: 'user', content: fullPrompt });
+  if (callId) touchSession(callId);
 
   const url = baseURL.replace(/\/+$/, '') + '/v1/chat/completions';
   const body = {
@@ -300,7 +309,7 @@ async function queryOpenAI({ fullPrompt, callId, timestamp, baseURL, apiKey, mod
         'Authorization': `Bearer ${apiKey}`,
       },
       timeout: 120000,
-    });
+    }, body);
 
     const duration_ms = Date.now() - startTime;
 
@@ -320,6 +329,7 @@ async function queryOpenAI({ fullPrompt, callId, timestamp, baseURL, apiKey, mod
     if (callId) {
       messages.push({ role: 'assistant', content });
       chatHistories.set(callId, messages);
+      touchSession(callId);
     }
 
     return { success: true, response: content, sessionId: callId || null, duration_ms };
@@ -527,6 +537,7 @@ app.post('/ask', async (req, res) => {
 
     if (sessionId && callId && AI_BACKEND === 'claude') {
       sessions.set(callId, sessionId);
+      touchSession(callId);
       console.log(`[${new Date().toISOString()}] SESSION STORED: ${callId} -> ${sessionId}`);
     }
 
@@ -631,7 +642,10 @@ app.post('/ask-structured', async (req, res) => {
       const { response, sessionId } = result;
       lastRaw = response;
 
-      if (sessionId && callId && AI_BACKEND === 'claude') sessions.set(callId, sessionId);
+      if (sessionId && callId && AI_BACKEND === 'claude') {
+        sessions.set(callId, sessionId);
+        touchSession(callId);
+      }
 
       const parsed = tryParseJsonFromText(response);
       if (!parsed.ok) {
@@ -696,8 +710,7 @@ app.post('/end-session', (req, res) => {
   const { callId } = req.body;
   const timestamp = new Date().toISOString();
 
-  if (callId && sessions.has(callId)) {
-    sessions.delete(callId);
+  if (callId && endSessionStorage(callId)) {
     console.log(`[${timestamp}] SESSION ENDED: ${callId}`);
   }
 

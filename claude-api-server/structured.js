@@ -97,7 +97,7 @@ function extractJsonCandidates(text) {
       if (inString) {
         if (escape) {
           escape = false;
-        } else if (ch === '\\\\') {
+        } else if (ch === '\\') {
           escape = true;
         } else if (ch === '"') {
           inString = false;

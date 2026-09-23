@@ -9,6 +9,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const logger = require('./logger');
+const audioUrls = require('./audio-urls');
+const { createTtsCache } = require('./tts-cache');
+const { withRetry } = require('./retry');
 
 const TTS_PROVIDER = (process.env.TTS_PROVIDER || 'elevenlabs').toLowerCase();
 
@@ -55,6 +58,27 @@ function generateFilename(text, ext = 'mp3') {
   const hash = crypto.createHash('md5').update(text).digest('hex').substring(0, 8);
   const timestamp = Date.now();
   return `tts-${timestamp}-${hash}.${ext}`;
+}
+
+/**
+ * In-memory TTS cache keyed by provider+voice+text hash.
+ *
+ * Repeated phrases (greetings, thinking phrases, "I didn't hear anything", etc.)
+ * are re-synthesized on every call because the filename includes Date.now(). The
+ * cache skips the API call for identical text+voice and reuses the existing file.
+ * Entries are validated against disk (the periodic cleanup may have removed the
+ * file); stale entries are regenerated.
+ */
+const TTS_CACHE_MAX = parseInt(process.env.TTS_CACHE_MAX, 10) || 500;
+const ttsCache = createTtsCache({ provider: TTS_PROVIDER, maxSize: TTS_CACHE_MAX });
+
+function fileExists(filepath) {
+  try {
+    fs.accessSync(filepath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -136,17 +160,30 @@ async function generateKokoro(text, voiceId) {
 async function generateSpeech(text, voiceId = DEFAULT_VOICE_ID) {
   const startTime = Date.now();
 
+  // Cache lookup: reuse an existing file for identical text+voice instead of
+  // hitting the TTS provider again. Files may have been cleaned up, so verify.
+  const cachedFilename = ttsCache.get(text, voiceId);
+  if (cachedFilename) {
+    const cachedPath = path.join(audioDir, cachedFilename);
+    if (fileExists(cachedPath)) {
+      logger.info('Speech cache hit', { filename: cachedFilename, textLength: text.length });
+      return audioUrls.audioFileUrl(cachedFilename);
+    }
+    // File was cleaned up; drop the stale entry and regenerate.
+    ttsCache.remove(text, voiceId);
+  }
+
   try {
     let result;
 
     if (TTS_PROVIDER === 'kokoro') {
-      result = await generateKokoro(text, voiceId);
+      result = await withRetry(() => generateKokoro(text, voiceId), { name: 'tts-kokoro' });
     } else {
       // Default: ElevenLabs
       if (!ELEVENLABS_API_KEY) {
         throw new Error('ELEVENLABS_API_KEY environment variable not set');
       }
-      result = await generateElevenLabs(text, voiceId);
+      result = await withRetry(() => generateElevenLabs(text, voiceId), { name: 'tts-elevenlabs' });
     }
 
     // Save audio file
@@ -154,6 +191,9 @@ async function generateSpeech(text, voiceId = DEFAULT_VOICE_ID) {
     const filepath = path.join(audioDir, filename);
 
     fs.writeFileSync(filepath, result.buffer);
+
+    // Store in cache (bounded; evicts oldest on overflow)
+    ttsCache.set(text, voiceId, filename);
 
     const latency = Date.now() - startTime;
     const fileSize = result.buffer.length;
@@ -163,11 +203,12 @@ async function generateSpeech(text, voiceId = DEFAULT_VOICE_ID) {
       filename,
       fileSize,
       latency,
-      textLength: text.length
+      textLength: text.length,
+      cache: 'miss'
     });
 
     // Return HTTP URL (served by the voice-app HTTP server)
-    return `http://127.0.0.1:3000/audio-files/${filename}`;
+    return audioUrls.audioFileUrl(filename);
 
   } catch (error) {
     const latency = Date.now() - startTime;
@@ -301,10 +342,9 @@ function cleanupOldFiles(maxAgeMs = 60 * 60 * 1000) {
 // Initialize audio directory
 setAudioDir(audioDir);
 
-// Setup periodic cleanup (every 30 minutes)
-setInterval(() => {
-  cleanupOldFiles();
-}, 30 * 60 * 1000);
+// NOTE: Periodic audio-file cleanup is owned centrally by index.js (via
+// http-server.cleanupOldFiles) so there is a single cleanup loop. The
+// cleanupOldFiles function below is still exported for manual/test use.
 
 module.exports = {
   generateSpeech,
@@ -312,5 +352,8 @@ module.exports = {
   cleanupOldFiles,
   getAvailableVoices,
   isAvailable,
-  getProvider
+  getProvider,
+  // Exposed for testing / cache introspection
+  ttsCache,
+  TTS_CACHE_MAX
 };

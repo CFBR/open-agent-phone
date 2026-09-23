@@ -8,6 +8,8 @@ class MultiRegistrar {
     this.srf = srf;
     this.baseConfig = baseConfig;
     this.registrations = new Map();
+    this.timers = new Map(); // extension -> setTimeout handle
+    this.stopped = false;
   }
 
   /**
@@ -15,10 +17,9 @@ class MultiRegistrar {
    * @param {Object} devices - Object keyed by extension with device configs
    */
   registerAll(devices) {
-    const extensions = Object.keys(devices);
-    console.log('[MULTI-REGISTRAR] Starting registration for ' + extensions.length + ' devices');
-    
-    for (const [extension, device] of Object.entries(devices)) {
+    console.log('[MULTI-REGISTRAR] Starting registration for ' + Object.keys(devices).length + ' devices');
+
+    for (const [, device] of Object.entries(devices)) {
       this.registerDevice(device);
     }
   }
@@ -109,22 +110,41 @@ class MultiRegistrar {
   }
 
   scheduleRefresh(device, config, seconds) {
+    if (this.stopped) return;
     const self = this;
-    setTimeout(function() {
+    this._clearTimer(config.extension);
+    const timer = setTimeout(function() {
       console.log('[MULTI-REGISTRAR] Refreshing ' + device.name);
       self.sendRegister(device, config);
     }, seconds * 1000);
+    this.timers.set(config.extension, timer);
   }
 
   scheduleRetry(device, config, seconds) {
+    if (this.stopped) return;
     const self = this;
     console.log('[MULTI-REGISTRAR] ' + device.name + ' retry in ' + seconds + 's');
-    setTimeout(function() {
+    this._clearTimer(config.extension);
+    const timer = setTimeout(function() {
       self.sendRegister(device, config);
     }, seconds * 1000);
+    this.timers.set(config.extension, timer);
+  }
+
+  _clearTimer(extension) {
+    const timer = this.timers.get(extension);
+    if (timer) {
+      clearTimeout(timer);
+      this.timers.delete(extension);
+    }
   }
 
   stop() {
+    this.stopped = true;
+    for (const timer of this.timers.values()) {
+      clearTimeout(timer);
+    }
+    this.timers.clear();
     this.registrations.clear();
     console.log('[MULTI-REGISTRAR] Stopped all registrations');
   }

@@ -9,6 +9,7 @@ const OpenAI = require("openai");
 const WaveFile = require("wavefile").WaveFile;
 const fs = require("fs");
 const path = require("path");
+const { withRetry } = require("./retry");
 
 // Lazy-initialized clients
 let openaiClient = null;
@@ -110,41 +111,33 @@ async function transcribe(audioBuffer, options = {}) {
 
   try {
     let transcription;
-    
+
+    const runTranscription = (client, model) => withRetry(() => client.audio.transcriptions.create({
+      file: fs.createReadStream(tempFile),
+      model: model,
+      language: language,
+      response_format: "text"
+    }), { name: 'stt-' + STT_PROVIDER });
+
     if (STT_PROVIDER === 'local') {
       const client = getLocalClient();
       if (!client) {
         throw new Error("Local Whisper (faster-whisper) not configured - LOCAL_WHISPER_URL not set");
       }
-      transcription = await client.audio.transcriptions.create({
-        file: fs.createReadStream(tempFile),
-        model: "whisper-1",
-        language: language,
-        response_format: "text"
-      });
+      transcription = await runTranscription(client, "whisper-1");
     } else if (STT_PROVIDER === 'custom') {
       const client = getCustomClient();
       if (!client) {
         throw new Error("Custom STT not configured - CUSTOM_STT_URL not set");
       }
-      transcription = await client.audio.transcriptions.create({
-        file: fs.createReadStream(tempFile),
-        model: "whisper-1",
-        language: language,
-        response_format: "text"
-      });
+      transcription = await runTranscription(client, "whisper-1");
     } else {
       // Default: OpenRouter
       const client = getOpenAIClient();
       if (!client) {
         throw new Error("OpenRouter API key not configured");
       }
-      transcription = await client.audio.transcriptions.create({
-        file: fs.createReadStream(tempFile),
-        model: "openai/whisper-1",
-        language: language,
-        response_format: "text"
-      });
+      transcription = await runTranscription(client, "openai/whisper-1");
     }
 
     const timestamp = new Date().toISOString();

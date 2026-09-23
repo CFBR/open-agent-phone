@@ -13,21 +13,26 @@ const path = require('path');
 const fs = require('fs').promises;
 const debug = require('debug')('voice-app:http-server');
 const crypto = require('crypto');
+const audioCleanup = require('./audio-cleanup');
 
-// Cleanup interval: every 2 minutes
-const CLEANUP_INTERVAL = 120000;
-// File max age: 10 minutes
-const FILE_MAX_AGE = 600000;
+// Re-exported for backwards compatibility; the implementation lives in
+// audio-cleanup.js so it can be used/tested without loading express.
+const cleanupOldFiles = audioCleanup.cleanupOldFiles;
+const CLEANUP_INTERVAL = audioCleanup.CLEANUP_INTERVAL;
+const FILE_MAX_AGE = audioCleanup.FILE_MAX_AGE;
 
 /**
  * Create HTTP Server
  *
  * @param {string} audioDir - Directory to serve audio files from
  * @param {number} port - Port to listen on (default: 3000)
+ * @param {Object} [options]
+ * @param {Function} [options.getHealthInfo] - () => Object merged into /health
  * @returns {Object} { app, server, saveAudio, getAudioUrl, close, finalize }
  */
-function createHttpServer(audioDir, port = 3000) {
+function createHttpServer(audioDir, port = 3000, options = {}) {
   const app = express();
+  const getHealthInfo = options.getHealthInfo || (() => ({}));
 
   // Parse JSON bodies
   app.use(express.json());
@@ -59,13 +64,19 @@ function createHttpServer(audioDir, port = 3000) {
   }));
 
   // Health check endpoint
-  app.get('/health', (req, res) => {
-    res.json({
+  app.get('/health', async (req, res) => {
+    const base = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       audioDir,
       port
-    });
+    };
+    try {
+      const extra = await getHealthInfo();
+      res.json({ ...base, ...extra });
+    } catch (err) {
+      res.json({ ...base, healthError: err.message });
+    }
   });
 
   // Audio upload endpoint
@@ -117,20 +128,13 @@ function createHttpServer(audioDir, port = 3000) {
     debug(`Serving audio files from ${audioDir}`);
   });
 
-  // Cleanup old files periodically
-  const cleanupTimer = setInterval(async () => {
-    try {
-      await cleanupOldFiles(audioDir, FILE_MAX_AGE);
-    } catch (error) {
-      console.error('Error during cleanup:', error);
-    }
-  }, CLEANUP_INTERVAL);
+  // NOTE: Periodic audio-file cleanup is owned by index.js (single source of
+  // truth) so we don't run multiple competing cleanup loops. cleanupOldFiles
+  // is still exported below for manual/programmatic use and tests.
 
-  // Cleanup on server close
   const originalClose = server.close.bind(server);
   server.close = (callback) => {
     debug('Stopping HTTP server');
-    clearInterval(cleanupTimer);
     originalClose(callback);
   };
 
@@ -177,7 +181,7 @@ function createHttpServer(audioDir, port = 3000) {
     });
 
     // Error handler
-    app.use((err, req, res, next) => {
+    app.use((err, _req, res, _next) => {
       console.error('Server error:', err);
       res.status(500).json({
         error: 'Internal server error',
@@ -198,45 +202,9 @@ function createHttpServer(audioDir, port = 3000) {
   };
 }
 
-/**
- * Cleanup files older than maxAge
- * @param {string} directory - Directory to clean
- * @param {number} maxAge - Max age in milliseconds
- */
-async function cleanupOldFiles(directory, maxAge) {
-  try {
-    const files = await fs.readdir(directory);
-    const now = Date.now();
-    let deletedCount = 0;
-
-    for (const file of files) {
-      const filepath = path.join(directory, file);
-
-      try {
-        const stats = await fs.stat(filepath);
-        const age = now - stats.mtimeMs;
-
-        if (age > maxAge) {
-          debug(`Deleting old file: ${file} (age: ${Math.round(age / 1000)}s)`);
-          await fs.unlink(filepath);
-          deletedCount++;
-        }
-      } catch (error) {
-        // Skip files that can't be accessed
-        debug(`Error checking file ${file}:`, error.message);
-      }
-    }
-
-    if (deletedCount > 0) {
-      debug(`Cleanup complete: deleted ${deletedCount} old files`);
-    }
-
-  } catch (error) {
-    console.error('Error during cleanup:', error);
-  }
-}
-
 module.exports = {
   createHttpServer,
-  cleanupOldFiles
+  cleanupOldFiles,
+  CLEANUP_INTERVAL,
+  FILE_MAX_AGE
 };

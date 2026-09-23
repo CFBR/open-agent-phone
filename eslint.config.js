@@ -62,6 +62,7 @@ module.exports = [
         clearInterval: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
+        setImmediate: 'readonly',
         fetch: 'readonly'  // Node 18+ global fetch
       }
     },

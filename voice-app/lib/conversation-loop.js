@@ -13,98 +13,31 @@
  */
 
 const logger = require('./logger');
-
-// Audio cue URLs
-const READY_BEEP_URL = 'http://127.0.0.1:3000/static/ready-beep.wav';
-const GOTIT_BEEP_URL = 'http://127.0.0.1:3000/static/gotit-beep.wav';
-const HOLD_MUSIC_URL = 'http://127.0.0.1:3000/static/hold-music.mp3';
-
-// Claude Code-style thinking phrases
-const THINKING_PHRASES = [
-  "Pondering...",
-  "Elucidating...",
-  "Cogitating...",
-  "Ruminating...",
-  "Contemplating...",
-  "Consulting the oracle...",
-  "Summoning knowledge...",
-  "Engaging neural pathways...",
-  "Accessing the mainframe...",
-  "Querying the void...",
-  "Let me think about that...",
-  "Processing...",
-  "Hmm, interesting question...",
-  "One moment...",
-  "Searching my brain...",
-];
-
-function getRandomThinkingPhrase() {
-  return THINKING_PHRASES[Math.floor(Math.random() * THINKING_PHRASES.length)];
-}
-
-function isGoodbye(transcript) {
-  const lower = transcript.toLowerCase().trim();
-  const goodbyePhrases = ['goodbye', 'good bye', 'bye', 'hang up', 'end call', "that's all", 'thats all'];
-  return goodbyePhrases.some(phrase => {
-    return lower === phrase || lower.includes(` ${phrase}`) ||
-           lower.startsWith(`${phrase} `) || lower.endsWith(` ${phrase}`);
-  });
-}
+const audioUrls = require('./audio-urls');
+const {
+  getRandomThinkingPhrase,
+  isGoodbye,
+  extractVoiceLine,
+} = require('./voice-response');
 
 /**
- * Extract voice-friendly line from Claude's response
- * Priority: VOICE_RESPONSE > CUSTOM COMPLETED > COMPLETED > first sentence
+ * Format structured background `context` (string or object) into a prompt block.
+ * Returns an empty string when no context is provided.
  */
-function extractVoiceLine(response) {
-  /**
-   * Clean markdown and formatting from text for speech
-   */
-  function cleanForSpeech(text) {
-    return text
-      .replace(/\*+/g, '')              // Remove bold/italic markers
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // Convert [text](url) to just text
-      .replace(/\[([^\]]+)\]/g, '$1')   // Remove remaining brackets
-      .trim();
+function formatContextBlock(context) {
+  if (!context) return '';
+  let text;
+  if (typeof context === 'string') {
+    text = context.trim();
+  } else if (typeof context === 'object') {
+    text = Object.entries(context)
+      .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`)
+      .join('\n');
+  } else {
+    text = String(context);
   }
-
-  // Priority 1: Check for new VOICE_RESPONSE line (voice-optimized content)
-  const voiceMatch = response.match(/🗣️\s*VOICE_RESPONSE:\s*([^\n]+)/im);
-  if (voiceMatch) {
-    const text = cleanForSpeech(voiceMatch[1]);
-    const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
-
-    // Accept if under 60 words
-    if (text && wordCount <= 60) {
-      return text;
-    }
-
-    // If too long, log warning but continue to next fallback
-    logger.warn('VOICE_RESPONSE too long, falling back', { wordCount, maxWords: 60 });
-  }
-
-  // Priority 2: Check for legacy CUSTOM COMPLETED line
-  const customMatch = response.match(/🗣️\s*CUSTOM\s+COMPLETED:\s*(.+?)(?:\n|$)/im);
-  if (customMatch) {
-    const text = cleanForSpeech(customMatch[1]);
-    if (text && text.split(/\s+/).length <= 50) {
-      return text;
-    }
-  }
-
-  // Priority 3: Check for standard COMPLETED line
-  const completedMatch = response.match(/🎯\s*COMPLETED:\s*(.+?)(?:\n|$)/im);
-  if (completedMatch) {
-    return cleanForSpeech(completedMatch[1]);
-  }
-
-  // Priority 4: Fallback to first sentence
-  const firstSentence = response.split(/[.!?]/)[0];
-  if (firstSentence && firstSentence.length < 500) {
-    return firstSentence.trim();
-  }
-
-  // Last resort: truncate
-  return response.substring(0, 500).trim();
+  if (!text) return '';
+  return `\n\n[BACKGROUND CONTEXT - DO NOT REPEAT TO THE USER]:\n${text}`;
 }
 
 /**
@@ -132,8 +65,10 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
     ttsService,
     wsPort,
     initialContext = null,
+    context = null,
     skipGreeting = false,
     deviceConfig = null,
+    greeting = null,
     maxTurns = 20
   } = options;
 
@@ -163,19 +98,19 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
 
     // Play greeting (skip for outbound where initial message already played)
     if (!skipGreeting && callActive) {
-      const greetingUrl = await ttsService.generateSpeech(
-        "Hello! I'm your server. How can I help you today?",
-        voiceId
-      );
+      // Use explicit greeting if provided (e.g. device-specific name), else a default.
+      const greetingText = greeting || "Hello! I'm your server. How can I help you today?";
+      const greetingUrl = await ttsService.generateSpeech(greetingText, voiceId);
       await endpoint.play(greetingUrl);
     }
 
     // Prime Claude with context if this is an outbound call (NON-BLOCKING)
     // Fire-and-forget: we don't use the response, just establishing session context
     if (initialContext && callActive) {
-      logger.info('Priming Claude with outbound context (non-blocking)', { callUuid });
+      logger.info('Priming Claude with outbound context (non-blocking)', { callUuid, hasContext: !!context });
+      const contextBlock = formatContextBlock(context);
       claudeBridge.query(
-        `[SYSTEM CONTEXT - DO NOT REPEAT]: You just called the user to tell them: "${initialContext}". They have answered. Now listen to their response and help them.`,
+        `[SYSTEM CONTEXT - DO NOT REPEAT]: You just called the user to tell them: "${initialContext}".${contextBlock} They have answered. Now listen to their response and help them.`,
         { callId: callUuid, devicePrompt: devicePrompt, isSystemPrime: true }
       ).catch(err => logger.warn('Prime query failed', { callUuid, error: err.message }));
     }
@@ -260,7 +195,7 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
       // READY BEEP: Signal "your turn to speak"
       // ============================================
       try {
-        if (callActive) await endpoint.play(READY_BEEP_URL);
+        if (callActive) await endpoint.play(audioUrls.READY_BEEP_URL);
       } catch (e) {
         if (!callActive) break;
         logger.warn('Ready beep failed', { callUuid, error: e.message });
@@ -301,7 +236,7 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
       // GOT-IT BEEP: Signal "I heard you, processing"
       // ============================================
       try {
-        if (callActive) await endpoint.play(GOTIT_BEEP_URL);
+        if (callActive) await endpoint.play(audioUrls.GOTIT_BEEP_URL);
       } catch (e) {
         if (!callActive) break;
         logger.warn('Got-it beep failed', { callUuid, error: e.message });
@@ -348,7 +283,7 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
       // 2. Start hold music in background
       let musicPlaying = false;
       if (callActive) {
-        endpoint.play(HOLD_MUSIC_URL).catch(e => {
+        endpoint.play(audioUrls.HOLD_MUSIC_URL).catch(e => {
           logger.warn('Hold music failed', { callUuid, error: e.message });
         });
         musicPlaying = true;
@@ -454,7 +389,5 @@ module.exports = {
   extractVoiceLine,
   isGoodbye,
   getRandomThinkingPhrase,
-  READY_BEEP_URL,
-  GOTIT_BEEP_URL,
-  HOLD_MUSIC_URL
+  formatContextBlock
 };

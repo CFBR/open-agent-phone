@@ -12,68 +12,13 @@ const crypto = require('crypto');
 const router = express.Router();
 const logger = require('./logger');
 const deviceRegistry = require('./device-registry');
+const { extractVoiceLine } = require('./voice-response');
 
 // Dependencies injected via setupRoutes()
 let claudeBridge = null;
 
 // Claude API server URL (same as used by claudeBridge)
 const CLAUDE_API_URL = process.env.CLAUDE_API_URL || 'http://localhost:3333';
-
-/**
- * Extract voice-friendly line from Claude response
- * Copied from conversation-loop.js for consistency
- */
-function extractVoiceLine(response) {
-  /**
-   * Clean markdown and formatting from text for speech
-   */
-  function cleanForSpeech(text) {
-    return text
-      .replace(/\*+/g, '')              // Remove bold/italic markers
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // Convert [text](url) to just text
-      .replace(/\[([^\]]+)\]/g, '$1')   // Remove remaining brackets
-      .trim();
-  }
-
-  // Priority 1: Check for new VOICE_RESPONSE line (voice-optimized content)
-  const voiceMatch = response.match(/🗣️\s*VOICE_RESPONSE:\s*([^\n]+)/im);
-  if (voiceMatch) {
-    const text = cleanForSpeech(voiceMatch[1]);
-    const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
-
-    // Accept if under 60 words
-    if (text && wordCount <= 60) {
-      return text;
-    }
-
-    // If too long, log warning but continue to next fallback
-    logger.warn('VOICE_RESPONSE too long, falling back', { wordCount, maxWords: 60 });
-  }
-
-  // Priority 2: Check for legacy CUSTOM COMPLETED line
-  const customMatch = response.match(/🗣️\s*CUSTOM\s+COMPLETED:\s*(.+?)(?:\n|$)/im);
-  if (customMatch) {
-    const text = cleanForSpeech(customMatch[1]);
-    if (text && text.split(/\s+/).length <= 50) {
-      return text;
-    }
-  }
-
-  // Priority 3: Check for standard COMPLETED line
-  const completedMatch = response.match(/🎯\s*COMPLETED:\s*(.+?)(?:\n|$)/im);
-  if (completedMatch) {
-    return cleanForSpeech(completedMatch[1]);
-  }
-
-  // Priority 4: Fallback to first sentence
-  const firstSentence = response.split(/[.!?]/)[0];
-  if (firstSentence && firstSentence.length < 500) {
-    return firstSentence.trim();
-  }
-
-  // Last resort: truncate
-  return response.substring(0, 500).trim();
-}
 
 /**
  * Extract JSON from Claude response
@@ -102,26 +47,6 @@ function extractJson(text) {
   }
 
   return null;
-}
-
-/**
- * Build query context for JSON format
- * Forces Claude to return structured JSON with specified schema
- */
-function buildJsonQueryContext(schema) {
-  if (!schema || !schema.requiredFields) {
-    return '[STRUCTURED QUERY - RESPOND WITH JSON ONLY]\nReturn a valid JSON object. No markdown, no code fences, no explanations.';
-  }
-
-  let context = '[STRUCTURED QUERY - RESPOND WITH JSON ONLY]\n';
-  context += 'Return EXACTLY ONE valid JSON object. No markdown, no code fences, no explanations.\n';
-  context += `Required fields: ${JSON.stringify(schema.requiredFields)}\n`;
-
-  if (schema.fieldGuidance) {
-    context += `Field guidance: ${JSON.stringify(schema.fieldGuidance)}\n`;
-  }
-
-  return context;
 }
 
 /**

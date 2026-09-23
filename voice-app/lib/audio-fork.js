@@ -1,28 +1,7 @@
 const { EventEmitter } = require('node:events');
 const WebSocket = require('ws');
+const { pcmStats } = require('./pcm-stats');
 
-function pcmStats(buf, endian = 'LE') {
-  const sampleCount = Math.floor(buf.length / 2);
-  if (sampleCount <= 0) {
-    return { sampleCount: 0, rms: 0, maxAbs: 0, nearZeroRatio: 1 };
-  }
-
-  let sumSquares = 0;
-  let maxAbs = 0;
-  let nearZero = 0;
-  const read = endian === 'BE' ? Buffer.prototype.readInt16BE : Buffer.prototype.readInt16LE;
-
-  for (let i = 0; i < sampleCount; i++) {
-    const sample = read.call(buf, i * 2);
-    const abs = Math.abs(sample);
-    sumSquares += abs * abs;
-    if (abs > maxAbs) maxAbs = abs;
-    if (abs < 200) nearZero++;
-  }
-
-  const rms = Math.sqrt(sumSquares / sampleCount);
-  return { sampleCount, rms, maxAbs, nearZeroRatio: nearZero / sampleCount };
-}
 
 class AudioForkSession extends EventEmitter {
   constructor({
@@ -173,16 +152,19 @@ class AudioForkSession extends EventEmitter {
     return result;
   }
 
-  _isSpeech(buf) {
-    if (!this._pcmEndian) this._pcmEndian = this._detectEndian(buf);
-    const stats = pcmStats(buf, this._pcmEndian);
-
+  _isSpeechFromStats(stats) {
     const rmsThreshold = 650;
     const maxThreshold = 2200;
 
     const looksSilent = stats.nearZeroRatio > 0.94 && stats.rms < rmsThreshold;
     if (looksSilent) return false;
     return stats.maxAbs >= maxThreshold || stats.rms >= rmsThreshold;
+  }
+
+  // Backwards-compatible wrapper (computes stats from a buffer).
+  _isSpeech(buf) {
+    if (!this._pcmEndian) this._pcmEndian = this._detectEndian(buf);
+    return this._isSpeechFromStats(pcmStats(buf, this._pcmEndian));
   }
 
   _onMessage(data) {
@@ -211,10 +193,15 @@ class AudioForkSession extends EventEmitter {
 
     this._binaryCount++;
 
+    // Compute PCM stats once per chunk and reuse for logging + VAD. Endian is
+    // detected on the first chunk; afterwards this is a single pass over the
+    // samples instead of up to three.
+    if (!this._pcmEndian) this._pcmEndian = this._detectEndian(data);
+    const stats = pcmStats(data, this._pcmEndian);
+
     // Log periodically (every 50 chunks or every 5 seconds)
     const now = Date.now();
     if (this._binaryCount % 50 === 1 || now - this._lastLogTime > 5000) {
-      const stats = pcmStats(data, this._pcmEndian || 'LE');
       console.log('[AUDIO-DEBUG] Binary chunk #' + this._binaryCount + ': ' + data.length + ' bytes, RMS=' + Math.round(stats.rms) + ', max=' + stats.maxAbs + ', nearZero=' + (stats.nearZeroRatio*100).toFixed(1) + '%, captureEnabled=' + this.captureEnabled);
       this._lastLogTime = now;
     }
@@ -225,12 +212,11 @@ class AudioForkSession extends EventEmitter {
 
     if (data.length < 2) return;
 
-    const isSpeech = this._isSpeech(data);
+    const isSpeech = this._isSpeechFromStats(stats);
     const chunkMs = this._chunkDurationMs(data.length);
 
     // Log speech detection periodically
     if (this._binaryCount % 50 === 1) {
-      const stats = pcmStats(data, this._pcmEndian || 'LE');
       console.log('[AUDIO-DEBUG] VAD: isSpeech=' + isSpeech + ', inSpeech=' + this._inSpeech + ', silenceMs=' + Math.round(this._silenceMs) + ', RMS=' + Math.round(stats.rms) + ', max=' + stats.maxAbs);
     }
 
@@ -397,11 +383,5 @@ class AudioForkServer extends EventEmitter {
     return this._sessions.get(callUuid);
   }
 }
-
-// Add global unhandled rejection handler to prevent crashes
-// This is a safety net - the actual fix is proper cleanup in conversation-loop.js
-process.on('unhandledRejection', (reason, promise) => {
-  console.log('[AUDIO-DEBUG] Unhandled Rejection (caught, not crashing):', reason);
-});
 
 module.exports = { AudioForkServer, AudioForkSession };
