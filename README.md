@@ -405,6 +405,12 @@ Both the voice-app and claude-api-server ship with test suites (`node --test`). 
 - [API Query Contract](voice-app/API-QUERY-CONTRACT.md) — Protocol between voice-app and AI backend
 - [Claude Code Skill](docs/CLAUDE-CODE-SKILL.md) — Build a "call me" skill
 
+## Credits
+
+This project is a fork of [Claude Phone](https://github.com/theNetworkChuck/claude-phone) by [NetworkChuck](https://github.com/theNetworkChuck). Original architecture, SIP/3CX integration, and CLI design by NetworkChuck; this fork adds provider abstraction, local TTS/STT support, API authentication, and the test suite.
+
+Released under the [MIT License](LICENSE) — see the copyright notice for both the original author and this fork's contributors.
+
 ## License
 
 MIT
