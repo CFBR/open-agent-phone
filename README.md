@@ -51,7 +51,7 @@ The goal isn't to eliminate cloud services — it's to **never need them**. The 
 ### 1. Install
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/CFBR/open-agent--phone/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/CFBR/open-agent-phone/main/install.sh | bash
 ```
 
 The installer will:

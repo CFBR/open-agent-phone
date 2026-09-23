@@ -78,7 +78,7 @@ services:
   # FreeSWITCH — Media server (RTP audio)
   # ------------------------------------------------------------------
   freeswitch:
-    image: open-agent--phone-freeswitch:latest
+    image: open-agent-phone-freeswitch:latest
     build:
       context: .
       dockerfile: docker/freeswitch/Dockerfile

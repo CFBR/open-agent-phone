@@ -108,7 +108,7 @@ Wave 6 — Final cleanup + verification.
   References (executor has NO interview context - be exhaustive): `voice-app/lib/whisper-client.js:1-118` (full file — getOpenAIClient, transcribe, isAvailable), `.env.example:68-71` (STT env vars), `claude-api-server/server.js:340-348` (pattern for OpenAI-compatible calls), `voice-app/lib/conversation-loop.js:311` (calls whisperClient.transcribe)
   Acceptance criteria (agent-executable): `grep -n 'STT_PROVIDER' voice-app/lib/whisper-client.js` finds the var; `grep -n 'LOCAL_WHISPER_URL' voice-app/lib/whisper-client.js` finds the var; `grep -n 'CUSTOM_STT_URL' voice-app/lib/whisper-client.js` finds the var; `grep -n 'function transcribe' voice-app/lib/whisper-client.js` still exports `transcribe`
   QA scenarios:
-  - Happy: `node -e "const w = require('/home/fire/working/open-agent--phone/voice-app/lib/whisper-client.js'); console.log(typeof w.transcribe, typeof w.isAvailable)"` prints "function function"
+  - Happy: `node -e "const w = require('/home/fire/working/open-agent-phone/voice-app/lib/whisper-client.js'); console.log(typeof w.transcribe, typeof w.isAvailable)"` prints "function function"
   - Failure: `grep -c 'openrouter' voice-app/lib/whisper-client.js` shows hardcoded references are still the default path
   Evidence: `.omo/evidence/task-2-stt-abstraction.js`
 
