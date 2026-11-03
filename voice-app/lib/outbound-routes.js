@@ -7,6 +7,7 @@
 
 const express = require('express');
 const router = express.Router();
+const { URL } = require('url');
 const logger = require('./logger');
 const { OutboundSession, getSession, getAllSessions } = require('./outbound-session');
 const { initiateOutboundCall, playMessage, hangupCall } = require('./outbound-handler');
@@ -79,6 +80,23 @@ function validateRequest(body) {
     }
   }
 
+  // Optional: webhook URL. Validate it here so a malformed or non-HTTP value
+  // cannot reach fetch() later.
+  if (body.webhookUrl !== undefined) {
+    if (typeof body.webhookUrl !== 'string' || body.webhookUrl.trim() === '') {
+      return { valid: false, error: 'Field "webhookUrl" must be a non-empty string' };
+    }
+    let parsed;
+    try {
+      parsed = new URL(body.webhookUrl);
+    } catch {
+      return { valid: false, error: 'Field "webhookUrl" must be a valid URL' };
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { valid: false, error: 'Field "webhookUrl" must use http or https' };
+    }
+  }
+
   if (body.timeoutSeconds !== undefined) {
     var timeout = Number(body.timeoutSeconds);
     if (!Number.isInteger(timeout) || timeout < 5 || timeout > 120) {
@@ -128,7 +146,9 @@ router.post('/outbound-call', async function(req, res) {
     var mode = req.body.mode || 'announce';
     var deviceParam = req.body.device;
     var callerId = req.body.callerId;
-    var timeoutSeconds = req.body.timeoutSeconds || 30;
+    var timeoutSeconds = req.body.timeoutSeconds
+      || parseInt(process.env.OUTBOUND_RING_TIMEOUT, 10)
+      || 30;
     var webhookUrl = req.body.webhookUrl;
 
     // Look up device configuration
@@ -144,7 +164,13 @@ router.post('/outbound-call', async function(req, res) {
           voiceId: deviceConfig.voiceId || 'default'
         });
       } else {
-        logger.warn('Device not found, using default', { requested: deviceParam });
+        // An explicit but unknown device should still use the default identity
+        // and voice rather than falling through to a null voice ID.
+        deviceConfig = deviceRegistry.getDefault();
+        logger.warn('Device not found, using default', {
+          requested: deviceParam,
+          device: deviceConfig ? deviceConfig.name : 'none'
+        });
       }
     }
 
@@ -256,8 +282,7 @@ router.post('/outbound-call', async function(req, res) {
               deviceConfig: deviceConfig,
               initialContext: message,
               context: context,           // NEW: pass structured context
-              skipGreeting: true,
-              maxTurns: 20
+              skipGreeting: true
             });
 
             await hangupCall(dialog, endpoint, callId);
@@ -279,6 +304,17 @@ router.post('/outbound-call', async function(req, res) {
           error: error.message,
           elapsed: Date.now() - startTime
         });
+
+        // A call that was answered before the failure still owns a dialog and
+        // a FreeSWITCH endpoint. Release them before reporting FAILED.
+        try {
+          await hangupCall(session.dialog, session.endpoint, callId);
+        } catch (hangupError) {
+          logger.warn('Cleanup after failed outbound call failed', {
+            callId: callId,
+            error: hangupError.message
+          });
+        }
 
         var reason = 'error';
         if (error.message === 'busy') reason = 'busy';
