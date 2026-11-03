@@ -130,7 +130,11 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
     }
 
     // Start audio fork for entire call
-    const wsUrl = `ws://127.0.0.1:${wsPort}/${encodeURIComponent(callUuid)}`;
+    // Start audio fork for entire call. The URL carries a short-lived token
+    // that the WebSocket server verifies before accepting audio.
+    const wsUrl = typeof audioForkServer.buildForkUrl === 'function'
+      ? audioForkServer.buildForkUrl(callUuid, wsPort)
+      : `ws://127.0.0.1:${wsPort}/${encodeURIComponent(callUuid)}`;
 
     // Use try-catch for expectSession to handle race conditions
     let sessionPromise;
