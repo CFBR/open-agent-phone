@@ -328,6 +328,8 @@ curl -H "Authorization: Bearer $VOICE_API_TOKEN" http://localhost:3000/api/devic
 
 This prevents anyone on your network from triggering outbound calls or running Claude queries against the voice app.
 
+The audio fork WebSocket also requires a short-lived HMAC token in the URL. The voice app creates and verifies the token in the same process. Set `AUDIO_FORK_SECRET` if you need a stable secret across restarts; otherwise a random per-process secret is used.
+
 ## Voice-App Architecture
 
 The voice-app is built from small, focused modules:
