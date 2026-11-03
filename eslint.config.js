@@ -63,7 +63,10 @@ module.exports = [
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         setImmediate: 'readonly',
-        fetch: 'readonly'  // Node 18+ global fetch
+        fetch: 'readonly',  // Node 18+ global fetch
+        URL: 'readonly',
+        AbortController: 'readonly',
+        AbortSignal: 'readonly'
       }
     },
     rules: {
