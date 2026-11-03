@@ -9,21 +9,23 @@ const assert = require('node:assert');
 const http = require('node:http');
 
 let createHttpServer = null;
+let metrics = null;
 try {
   createHttpServer = require('../lib/http-server').createHttpServer;
+  metrics = require('../lib/metrics');
 } catch (e) {
   // express not installed — skip.
 }
 
 const maybe = createHttpServer ? test : test.skip;
 
-function get(server, path) {
+function get(server, path, headers = {}) {
   return new Promise((resolve, reject) => {
     const port = server.address().port;
-    http.get({ port, path }, (res) => {
+    http.get({ port, path, headers }, (res) => {
       let body = '';
       res.on('data', (c) => (body += c));
-      res.on('end', () => resolve({ status: res.statusCode, body }));
+      res.on('end', () => resolve({ status: res.statusCode, body, headers: res.headers }));
     }).on('error', reject);
   });
 }
@@ -96,5 +98,41 @@ maybe('/health returns 503 when ready is false', async function () {
     assert.strictEqual(data.ready, false);
   } finally {
     server.close();
+  }
+});
+
+maybe('/metrics returns registered counters', async function () {
+  metrics.reset();
+  metrics.inc('voice_calls_total', 2, { direction: 'inbound' });
+  const { server } = createHttpServer('/tmp', 0);
+  try {
+    const r = await get(server, '/metrics');
+    assert.strictEqual(r.status, 200);
+    assert.match(r.headers['content-type'], /text\/plain/);
+    assert.match(r.body, /voice_calls_total\{direction="inbound"\} 2/);
+  } finally {
+    server.close();
+    metrics.reset();
+  }
+});
+
+maybe('/metrics requires METRICS_TOKEN when set', async function () {
+  const previous = process.env.METRICS_TOKEN;
+  process.env.METRICS_TOKEN = 'metrics-secret';
+  metrics.reset();
+  metrics.inc('voice_test_total', 1);
+  const { server } = createHttpServer('/tmp', 0);
+  try {
+    const denied = await get(server, '/metrics');
+    assert.strictEqual(denied.status, 401);
+
+    const allowed = await get(server, '/metrics', { 'X-Metrics-Token': 'metrics-secret' });
+    assert.strictEqual(allowed.status, 200);
+    assert.match(allowed.body, /voice_test_total 1/);
+  } finally {
+    server.close();
+    metrics.reset();
+    if (previous === undefined) delete process.env.METRICS_TOKEN;
+    else process.env.METRICS_TOKEN = previous;
   }
 });

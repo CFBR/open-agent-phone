@@ -14,6 +14,7 @@
 
 const logger = require('./logger');
 const audioUrls = require('./audio-urls');
+const metrics = require('./metrics');
 const {
   getRandomThinkingPhrase,
   isGoodbye,
@@ -75,6 +76,9 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
   // Extract devicePrompt and voiceId from deviceConfig (for Cephanie etc)
   const devicePrompt = deviceConfig?.prompt || null;
   const voiceId = deviceConfig?.voiceId || null;  // null = use default Morpheus voice
+  const direction = initialContext ? 'outbound' : 'inbound';
+  metrics.inc('voice_calls_total', 1, { direction });
+  metrics.incGauge('voice_active_calls');
   let session = null;
   let forkRunning = false;
   let callActive = true;
@@ -195,6 +199,7 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
 
     while (turnCount < maxTurns && callActive) {
       turnCount++;
+      metrics.inc('voice_turns_total', 1, { direction });
       logger.info('Conversation turn', { callUuid, turn: turnCount, maxTurns });
 
       // Check if call is still active
@@ -347,6 +352,7 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
     logger.info('Conversation loop ended normally', { callUuid, turns: turnCount });
 
   } catch (error) {
+    metrics.inc('voice_call_failures_total', 1, { direction });
     logger.error('Conversation loop error', {
       callUuid,
       error: error.message,
@@ -363,6 +369,7 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
       // Ignore cleanup errors
     }
   } finally {
+    metrics.decGauge('voice_active_calls');
     logger.info('Conversation loop cleanup', { callUuid });
 
     // Remove dialog listener

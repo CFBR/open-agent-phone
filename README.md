@@ -373,6 +373,13 @@ The voice-app is built from small, focused modules:
 
 The `claude-api-server` wraps your AI backend and includes a `session-store.js` for per-call session management (session-per-call for multi-turn context).
 
+## Observability
+
+- `GET /health` reports drachtio, FreeSWITCH, readiness, reconnecting state, active calls, and the selected providers.
+- `GET /metrics` returns Prometheus text with call, turn, TTS, STT, AI, and outbound counters plus the active call gauge.
+- Set `METRICS_TOKEN` to require `X-Metrics-Token` when scraping metrics.
+- Set `OUTBOUND_RATE_LIMIT` and `QUERY_RATE_LIMIT` to cap requests per minute per client IP. The defaults are 5 and 30.
+
 ## Troubleshooting
 
 ### Quick Diagnostics

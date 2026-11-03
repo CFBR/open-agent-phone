@@ -10,6 +10,7 @@ const path = require('path');
 const crypto = require('crypto');
 const logger = require('./logger');
 const audioUrls = require('./audio-urls');
+const metrics = require('./metrics');
 const { createTtsCache } = require('./tts-cache');
 const { withRetry } = require('./retry');
 
@@ -173,6 +174,7 @@ async function generateKokoro(text, voiceId) {
 async function generateSpeech(text, voiceId) {
   const startTime = Date.now();
   const resolvedVoiceId = resolveVoiceId(voiceId);
+  metrics.inc('voice_tts_requests_total', 1, { provider: TTS_PROVIDER });
 
   // Cache lookup: reuse an existing file for identical text+voice instead of
   // hitting the TTS provider again. Files may have been cleaned up, so verify.
@@ -180,6 +182,7 @@ async function generateSpeech(text, voiceId) {
   if (cachedFilename) {
     const cachedPath = path.join(audioDir, cachedFilename);
     if (fileExists(cachedPath)) {
+      metrics.inc('voice_tts_cache_hits_total', 1, { provider: TTS_PROVIDER });
       logger.info('Speech cache hit', { filename: cachedFilename, textLength: text.length });
       return audioUrls.audioFileUrl(cachedFilename);
     }
@@ -212,6 +215,7 @@ async function generateSpeech(text, voiceId) {
     const latency = Date.now() - startTime;
     const fileSize = result.buffer.length;
 
+    metrics.inc('voice_tts_success_total', 1, { provider: TTS_PROVIDER });
     logger.info('Speech generation successful', {
       provider: TTS_PROVIDER,
       filename,
@@ -227,6 +231,7 @@ async function generateSpeech(text, voiceId) {
   } catch (error) {
     const latency = Date.now() - startTime;
 
+    metrics.inc('voice_tts_failures_total', 1, { provider: TTS_PROVIDER });
     logger.error('Speech generation failed', {
       provider: TTS_PROVIDER,
       error: error.message,

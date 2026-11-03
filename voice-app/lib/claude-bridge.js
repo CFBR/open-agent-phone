@@ -4,9 +4,11 @@
  */
 
 const axios = require('axios');
+const metrics = require('./metrics');
 
 const CLAUDE_API_URL = process.env.CLAUDE_API_URL || 'http://localhost:3333';
 const CLAUDE_API_TOKEN = process.env.CLAUDE_API_TOKEN || '';
+const AI_BACKEND_LABEL = process.env.AI_BACKEND || 'default';
 
 function authHeaders() {
   return CLAUDE_API_TOKEN
@@ -26,6 +28,7 @@ function authHeaders() {
 async function query(prompt, options = {}) {
   const { callId, devicePrompt, timeout = 30 } = options; // AC27: Default 30s timeout
   const timestamp = new Date().toISOString();
+  metrics.inc('voice_ai_requests_total', 1, { backend: AI_BACKEND_LABEL });
 
   try {
     console.log(`[${timestamp}] CLAUDE Sending query to ${CLAUDE_API_URL}...`);
@@ -53,9 +56,11 @@ async function query(prompt, options = {}) {
     if (response.data.sessionId) {
       console.log(`[${timestamp}] CLAUDE Session ID: ${response.data.sessionId}`);
     }
+    metrics.inc('voice_ai_success_total', 1, { backend: AI_BACKEND_LABEL });
     return response.data.response;
 
   } catch (error) {
+    metrics.inc('voice_ai_failures_total', 1, { backend: AI_BACKEND_LABEL });
     // AC26: API server unreachable during call - don't crash, return helpful message
     if (error.code === 'ECONNREFUSED' || error.code === 'EHOSTUNREACH' || error.code === 'ENETUNREACH') {
       console.warn(`[${timestamp}] CLAUDE API server unreachable (${error.code})`);
