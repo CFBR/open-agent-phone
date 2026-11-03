@@ -103,6 +103,8 @@ export function generateDockerCompose(config) {
 
   // Determine if running on Pi (ARM64) - use specific versions with platform
   const isPiMode = config.deployment && config.deployment.mode === 'pi-split';
+  const ttsProvider = config.api?.ttsProvider || config.ttsProvider || 'elevenlabs';
+  const sttProvider = config.api?.sttProvider || config.sttProvider || 'openrouter';
   const drachtioImage = isPiMode ? 'drachtio/drachtio-server:0.9.4' : 'drachtio/drachtio-server:latest';
   const freeswitchImage = 'drachtio/drachtio-freeswitch-mrf:0.9.4';
   const platformLine = isPiMode ? '\n    platform: linux/arm64' : '';
@@ -153,7 +155,7 @@ services:
       - freeswitch
 
   # Local TTS engine (Kokoro-82M via Kokoro-FastAPI) - Only included when TTS_PROVIDER=kokoro
-  ${config.ttsProvider === 'kokoro' ? `
+  ${ttsProvider === 'kokoro' ? `
   kokoro-tts:
     image: ghcr.io/remsky/kokoro-fastapi-cpu:latest${platformLine}
     container_name: kokoro-tts
@@ -162,15 +164,25 @@ services:
     # Port 8880: HTTP API for OpenAI-compatible /v1/audio/speech
   ` : ''}
 
-  # Local STT engine (faster-whisper) - Only included when STT_PROVIDER=local
-  ${config.sttProvider === 'local' ? `
+  # Local STT engine (faster-whisper via Speaches) - Only included when STT_PROVIDER=local
+  ${sttProvider === 'local' ? `
   faster-whisper:
-    image: ghcr.io/sylvain/fastwhisper:latest${platformLine}
+    image: ghcr.io/speaches-ai/speaches@sha256:21e3df06d842fb7802ab470dd77c25f0e8c0d22950e8d8c6ae886e851af53ef8${platformLine}
     container_name: faster-whisper
     restart: unless-stopped
     network_mode: host
+    environment:
+      UVICORN_HOST: 127.0.0.1
+      UVICORN_PORT: 7000
+      WHISPER__MODEL: ${config.api?.whisperModel || 'Systran/faster-whisper-base'}
+    volumes:
+      - whisper-data:/home/ubuntu/.cache/huggingface
     # Port 7000: HTTP API for OpenAI-compatible /v1/audio/transcriptions
   ` : ''}
+${sttProvider === 'local' ? `
+volumes:
+  whisper-data:
+` : ''}
 `;
 }
 
@@ -280,6 +292,7 @@ export function generateEnvFile(config) {
     '# STT Provider Configuration',
     `STT_PROVIDER=${config.api?.sttProvider || 'openrouter'}`,
     `CUSTOM_STT_URL=${config.api?.customSttUrl || ''}`,
+    `WHISPER_MODEL=${config.api?.whisperModel || 'Systran/faster-whisper-base'}`,
     '',
     '# Application Settings',
     `HTTP_PORT=${config.server.httpPort}`,
