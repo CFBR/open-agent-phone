@@ -287,13 +287,127 @@ async function setupApiServer(config) {
     }
   }]);
 
-  return {
-    ...config,
-    server: {
-      ...config.server,
-      claudeApiPort: parseInt(answers.port, 10)
-    }
+  config.server = {
+    ...config.server,
+    claudeApiPort: parseInt(answers.port, 10)
   };
+
+  return setupAIBackend(config);
+}
+
+/**
+ * Configure the AI backend for an API-server-only install. The full setup flow
+ * asks about TTS and STT as well, which an API server does not use.
+ * @param {object} config - Current config
+ * @returns {Promise<object>} Updated config
+ */
+async function setupAIBackend(config) {
+  const answers = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'aiBackend',
+      message: 'AI backend:',
+      default: config.api.aiBackend || 'ollama',
+      choices: [
+        { name: 'Ollama (local, free)', value: 'ollama' },
+        { name: 'OpenAI API', value: 'openai' },
+        { name: 'OpenRouter API', value: 'openrouter' },
+        { name: 'Custom OpenAI-compatible API', value: 'custom' },
+        { name: 'Claude Code CLI (subscription)', value: 'claude' }
+      ]
+    }
+  ]);
+
+  config.api.aiBackend = answers.aiBackend;
+
+  if (answers.aiBackend === 'ollama') {
+    const ollama = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'ollamaUrl',
+        message: 'Ollama URL:',
+        default: config.api.ollamaUrl || 'http://127.0.0.1:11434',
+        validate: (input) => {
+          if (!input || input.trim() === '') return 'URL is required';
+          try { new URL(input); return true; } catch { return 'Invalid URL format'; }
+        }
+      },
+      {
+        type: 'input',
+        name: 'ollamaModel',
+        message: 'Ollama model:',
+        default: config.api.ollamaModel || 'llama3.2:3b'
+      }
+    ]);
+    config.api.ollamaUrl = ollama.ollamaUrl;
+    config.api.ollamaModel = ollama.ollamaModel;
+  } else if (answers.aiBackend === 'openai') {
+    const openai = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'apiKey',
+        message: 'OpenAI API key:',
+        default: config.api.openai?.apiKey || ''
+      },
+      {
+        type: 'input',
+        name: 'model',
+        message: 'OpenAI model:',
+        default: config.api.openai?.model || 'gpt-4o-mini'
+      }
+    ]);
+    config.api.openai = { apiKey: openai.apiKey, model: openai.model, validated: false };
+  } else if (answers.aiBackend === 'openrouter') {
+    const openrouter = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'apiKey',
+        message: 'OpenRouter API key:',
+        default: config.api.openrouter?.apiKey || ''
+      },
+      {
+        type: 'input',
+        name: 'model',
+        message: 'OpenRouter model:',
+        default: config.api.openrouterModel || 'openai/gpt-4o-mini'
+      }
+    ]);
+    config.api.openrouter = {
+      apiKey: openrouter.apiKey,
+      validated: false
+    };
+    config.api.openrouterModel = openrouter.model;
+  } else if (answers.aiBackend === 'custom') {
+    const custom = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'url',
+        message: 'Custom AI API base URL:',
+        default: config.api.customAiUrl || '',
+        validate: (input) => {
+          if (!input || input.trim() === '') return 'URL is required';
+          try { new URL(input); return true; } catch { return 'Invalid URL format'; }
+        }
+      },
+      {
+        type: 'password',
+        name: 'apiKey',
+        message: 'Custom AI API key (optional):',
+        default: config.api.customAiKey || ''
+      },
+      {
+        type: 'input',
+        name: 'model',
+        message: 'Model name (optional):',
+        default: config.api.customAiModel || ''
+      }
+    ]);
+    config.api.customAiUrl = custom.url;
+    config.api.customAiKey = custom.apiKey;
+    config.api.customAiModel = custom.model;
+  }
+
+  return config;
 }
 
 /**
@@ -1325,6 +1439,7 @@ async function setupDevice(config) {
       name: 'elevenlabsVoiceId',
       message: 'ElevenLabs voice ID:',
       default: existingDevice?.elevenlabsVoiceId || config.api.elevenlabs.defaultVoiceId || '',
+      when: () => (config.api.ttsProvider || 'elevenlabs') === 'elevenlabs',
       validate: (input) => {
         if (!input || input.trim() === '') {
           return 'Voice ID is required';
@@ -1337,18 +1452,6 @@ async function setupDevice(config) {
       name: 'kokoroVoiceId',
       message: 'Kokoro voice ID (e.g., af_heart, am_adam):',
       default: existingDevice?.kokoroVoiceId || config.api.kokoroVoiceId || 'af_heart',
-      validate: (input) => {
-        if (!input || input.trim() === '') {
-          return 'Voice ID is required';
-        }
-        return true;
-      }
-    },
-    {
-      type: 'input',
-      name: 'voiceId',
-      message: 'ElevenLabs voice ID (legacy):',
-      default: existingDevice?.voiceId || config.api.elevenlabs.defaultVoiceId || '',
       validate: (input) => {
         if (!input || input.trim() === '') {
           return 'Voice ID is required';
@@ -1399,14 +1502,23 @@ async function setupDevice(config) {
     console.log(chalk.gray(`  Using Kokoro TTS voice: ${answers.kokoroVoiceId} (no API validation needed)`));
   }
 
+  const elevenlabsVoiceId = answers.elevenlabsVoiceId
+    || existingDevice?.elevenlabsVoiceId
+    || config.api.elevenlabs.defaultVoiceId
+    || '';
+  const kokoroVoiceId = answers.kokoroVoiceId
+    || existingDevice?.kokoroVoiceId
+    || config.api.kokoroVoiceId
+    || 'af_heart';
+
   const device = {
     name: answers.name,
     extension: answers.extension,
     authId: answers.authId,
     password: answers.password,
-    elevenlabsVoiceId: answers.elevenlabsVoiceId,
-    kokoroVoiceId: answers.kokoroVoiceId,
-    voiceId: answers.voiceId, // legacy field for backward compat
+    elevenlabsVoiceId: elevenlabsVoiceId,
+    kokoroVoiceId: kokoroVoiceId,
+    voiceId: elevenlabsVoiceId || '', // legacy ElevenLabs field for backward compat
     prompt: answers.prompt
   };
 

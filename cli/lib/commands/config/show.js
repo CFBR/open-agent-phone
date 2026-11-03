@@ -40,8 +40,14 @@ export async function configShowCommand() {
 
   // API Keys
   console.log(chalk.bold('API Keys:'));
-  console.log(chalk.gray(`  OpenRouter API Key: ${redactValue(config.api.openrouter.apiKey)}`));
-  console.log(chalk.gray(`  ElevenLabs API Key: ${redactValue(config.api.elevenlabs.apiKey)}`));
+  console.log(chalk.gray(`  OpenRouter API Key: ${redactValue(config.api?.openrouter?.apiKey)}`));
+  console.log(chalk.gray(`  ElevenLabs API Key: ${redactValue(config.api?.elevenlabs?.apiKey)}`));
+
+  // Providers
+  console.log(chalk.bold('\nProviders:'));
+  console.log(chalk.gray(`  TTS: ${config.api?.ttsProvider || 'elevenlabs'}`));
+  console.log(chalk.gray(`  STT: ${config.api?.sttProvider || 'openrouter'}`));
+  console.log(chalk.gray(`  AI backend: ${config.api?.aiBackend || 'ollama'}`));
 
   // 3CX Configuration
   console.log(chalk.bold('\n3CX Configuration:'));
@@ -49,22 +55,30 @@ export async function configShowCommand() {
   console.log(chalk.gray(`  SIP Registrar: ${config.sip.registrar}`));
 
   // Server Configuration
+  const isPiSplit = config.deployment?.mode === 'pi-split';
+  const remoteHost = isPiSplit
+    ? config.deployment?.pi?.macIp
+    : config.deployment?.apiServerIp;
+  const claudeApiUrl = remoteHost
+    ? `http://${remoteHost}:${config.server.claudeApiPort}`
+    : `http://localhost:${config.server.claudeApiPort}`;
+
   console.log(chalk.bold('\nServer:'));
   console.log(chalk.gray(`  External IP: ${config.server.externalIp}`));
-  console.log(chalk.gray(`  Voice App Port: ${config.server.voiceAppPort}`));
+  console.log(chalk.gray(`  Voice App Port: ${config.server.httpPort || config.server.voiceAppPort || 3000}`));
   console.log(chalk.gray(`  Claude API Port: ${config.server.claudeApiPort}`));
-  console.log(chalk.gray(`  Claude API URL: ${config.server.claudeApiUrl}`));
+  console.log(chalk.gray(`  Claude API URL: ${claudeApiUrl}`));
 
   // Devices
   console.log(chalk.bold('\nDevices:'));
-  if (config.devices.length === 0) {
+  if (!config.devices || config.devices.length === 0) {
     console.log(chalk.gray('  (none configured)'));
   } else {
     for (const device of config.devices) {
       console.log(chalk.gray(`  • ${device.name} (extension ${device.extension})`));
       console.log(chalk.gray(`    Auth ID: ${device.authId}`));
       console.log(chalk.gray(`    Password: ${redactValue(device.password)}`));
-      console.log(chalk.gray(`    Voice ID: ${device.voiceId}`));
+      console.log(chalk.gray(`    Voice ID: ${device.voiceId || device.elevenlabsVoiceId || '[not set]'}`));
       if (device.prompt) {
         const shortPrompt = device.prompt.length > 50
           ? device.prompt.slice(0, 50) + '...'

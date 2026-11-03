@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { loadConfig, configExists, getInstallationType } from '../config.js';
 import { checkDocker, writeDockerConfig, startContainers } from '../docker.js';
-import { startServer, isServerRunning } from '../process-manager.js';
+import { startServer, isServerRunning, buildApiServerEnv } from '../process-manager.js';
 import { isClaudeInstalled, sleep } from '../utils.js';
 import { checkClaudeApiServer } from '../network.js';
 import { runPrereqChecks } from '../prereqs.js';
@@ -62,8 +62,9 @@ export async function startCommand() {
  * @returns {Promise<void>}
  */
 async function startApiServer(config) {
-  // Check Claude CLI
-  if (!(await isClaudeInstalled())) {
+  // Check Claude CLI only when the Claude backend is selected.
+  const aiBackend = config.api?.aiBackend || 'ollama';
+  if (aiBackend === 'claude' && !(await isClaudeInstalled())) {
     console.log(chalk.yellow('⚠️  Claude CLI not found'));
     console.log(chalk.gray('  Install from: https://claude.com/download\n'));
   }
@@ -90,7 +91,12 @@ async function startApiServer(config) {
     if (await isServerRunning()) {
       spinner.warn('Claude API server already running');
     } else {
-      await startServer(config.paths.claudeApiServer, config.server.claudeApiPort);
+      await startServer(
+        config.paths.claudeApiServer,
+        config.server.claudeApiPort,
+        null,
+        buildApiServerEnv(config)
+      );
       spinner.succeed(`Claude API server started on port ${config.server.claudeApiPort}`);
     }
   } catch (error) {
@@ -236,8 +242,9 @@ async function startBoth(config, isPiMode) {
     }
   }
 
-  // Check Claude CLI only in standard mode (Pi mode connects to API server instead)
-  if (!isPiMode && !(await isClaudeInstalled())) {
+  // Check Claude CLI only in standard mode and when the Claude backend is selected.
+  const aiBackend = config.api?.aiBackend || 'ollama';
+  if (!isPiMode && aiBackend === 'claude' && !(await isClaudeInstalled())) {
     console.log(chalk.yellow('⚠️  Claude CLI not found'));
     console.log(chalk.gray('  Install from: https://claude.com/download\n'));
   }
@@ -319,7 +326,12 @@ async function startBoth(config, isPiMode) {
       if (await isServerRunning()) {
         spinner.warn('Claude API server already running');
       } else {
-        await startServer(config.paths.claudeApiServer, config.server.claudeApiPort);
+        await startServer(
+          config.paths.claudeApiServer,
+          config.server.claudeApiPort,
+          null,
+          buildApiServerEnv(config)
+        );
         spinner.succeed(`Claude API server started on port ${config.server.claudeApiPort}`);
       }
     } catch (error) {
