@@ -285,6 +285,7 @@ export function generateEnvFile(config) {
     `HTTP_PORT=${config.server.httpPort}`,
     'WS_PORT=3001',
     'AUDIO_DIR=/app/audio',
+    `RECOVERY_TIMEOUT_MS=${config.api?.recoveryTimeoutMs || 300000}`,
     '',
     '# Outbound Call Settings',
     `MAX_CONVERSATION_TURNS=${config.api?.maxConversationTurns || 20}`,
