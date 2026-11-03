@@ -286,6 +286,8 @@ export function generateEnvFile(config) {
     'WS_PORT=3001',
     'AUDIO_DIR=/app/audio',
     `RECOVERY_TIMEOUT_MS=${config.api?.recoveryTimeoutMs || 300000}`,
+    `AUDIO_FORK_SECRET=${config.api?.audioForkSecret || ''}`,
+    `AUDIO_FORK_TOKEN_TTL_MS=${config.api?.audioForkTokenTtlMs || 60000}`,
     '',
     '# Outbound Call Settings',
     `MAX_CONVERSATION_TURNS=${config.api?.maxConversationTurns || 20}`,
