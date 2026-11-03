@@ -132,18 +132,14 @@ if [ "$AI_BACKEND" = "ollama" ]; then
     MODEL="${OLLAMA_MODEL:-llama3.2:3b}"
     echo -e "  Model: ${BLUE}$MODEL${NC} (this may take a few minutes)"
 
-    # Start ollama briefly to pull the model
-    docker run --rm -d --name ollama-pull \
-        -v ollama-data:/root/.ollama \
-        ollama/ollama:latest \
-        sh -c "ollama serve & sleep 2 && ollama pull $MODEL && echo 'PULLED'" 2>&1 || true
-
-    sleep 5
-    if docker ps --filter name=ollama-pull --format '{{.Status}}' 2>/dev/null | grep -q "Up"; then
-        echo -e "  ${YELLOW}Pull in progress (large model)... will continue in background${NC}"
-        echo -e "  ${YELLOW}Containers will start once pull finishes${NC}"
-    else
+    # Pull through Compose so the model lands in the same named volume the
+    # service uses (Compose prefixes volume names with the project name).
+    $COMPOSE_CMD -f docker-compose.full.yml up -d ollama
+    sleep 3
+    if $COMPOSE_CMD -f docker-compose.full.yml exec -T ollama ollama pull "$MODEL"; then
         echo -e "  ${GREEN}Model pulled${NC}"
+    else
+        echo -e "  ${YELLOW}Model pull failed; Ollama will retry on first query${NC}"
     fi
 else
     echo -e "  ${YELLOW}Skipping (AI_BACKEND is $AI_BACKEND, not ollama)${NC}"
@@ -153,7 +149,7 @@ echo ""
 # ---- Start services ----
 echo -e "${YELLOW}[6/6] Starting services...${NC}"
 
-$COMPOSE_CMD -f docker-compose.full.yml up -d --scale sbc=0 2>&1
+$COMPOSE_CMD -f docker-compose.full.yml up -d 2>&1
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
