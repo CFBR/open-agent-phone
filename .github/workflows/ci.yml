@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install workspace dependencies
+        run: |
+          npm install --prefix cli
+          npm install --prefix voice-app
+          npm install --prefix claude-api-server
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test

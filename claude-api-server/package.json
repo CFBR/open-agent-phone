@@ -1,12 +1,12 @@
 {
   "name": "claude-api-server",
-  "version": "1.0.5",
+  "version": "1.0.7",
   "description": "HTTP API wrapper for any AI backend — Voice Interface",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test test/**/*.test.js",
+    "test": "node --test test/*.test.js",
     "lint": "cd .. && npm run lint:api-server",
     "lint:fix": "cd .. && eslint claude-api-server/ --fix"
   },
