@@ -800,7 +800,7 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     service: 'Claude HTTP API Server',
-    version: '1.0.7',
+    version: '1.1.0',
     endpoints: {
       'POST /ask': 'Send a prompt to Claude',
       'POST /ask-structured': 'Send a prompt and return validated JSON (n8n)',
