@@ -15,6 +15,7 @@ const debug = require('debug')('voice-app:http-server');
 const crypto = require('crypto');
 const audioCleanup = require('./audio-cleanup');
 const audioUrls = require('./audio-urls');
+const metrics = require('./metrics');
 
 // Re-exported for backwards compatibility; the implementation lives in
 // audio-cleanup.js so it can be used/tested without loading express.
@@ -79,6 +80,19 @@ function createHttpServer(audioDir, port = 3000, options = {}) {
     } catch (err) {
       res.json({ ...base, healthError: err.message });
     }
+  });
+
+  // Prometheus-style metrics. Set METRICS_TOKEN to require a token.
+  app.get('/metrics', (req, res) => {
+    const token = process.env.METRICS_TOKEN || '';
+    if (token && req.get('X-Metrics-Token') !== token) {
+      return res.status(401).json({
+        success: false,
+        error: 'unauthorized',
+        message: 'Missing or invalid metrics token'
+      });
+    }
+    res.type('text/plain; version=0.0.4').send(metrics.render());
   });
 
   // Audio upload endpoint

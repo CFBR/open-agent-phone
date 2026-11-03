@@ -18,6 +18,8 @@ var handleInvite = sipHandler.handleInvite;
 var whisperClient = require("./lib/whisper-client");
 var claudeBridge = require("./lib/claude-bridge");
 var ttsService = require("./lib/tts-service");
+var metrics = require("./lib/metrics");
+var createRateLimiter = require("./lib/rate-limit").createRateLimiter;
 
 // Multi-extension support
 var deviceRegistry = require("./lib/device-registry");
@@ -338,6 +340,7 @@ function initializeServers() {
         freeswitch: freeswitchConnected,
         ready: isReady,
         reconnecting: Boolean(drachtioReconnectTimer || (freeswitchRecovery && freeswitchRecovery.pending)),
+        activeCalls: metrics.get('voice_active_calls'),
         devices: Object.keys(deviceRegistry.getAllDevices()).length,
         claudeApiUrl: process.env.CLAUDE_API_URL || 'http://localhost:3333',
         ttsProvider: ttsService.getProvider ? ttsService.getProvider() : undefined,
@@ -380,6 +383,16 @@ function initializeServers() {
   // Uploaded audio is served without auth (FreeSWITCH must fetch it), but
   // accepting uploads from the whole network lets anyone fill the disk.
   httpServer.app.use("/audio", apiAuth);
+
+  // Per-client rate limits for the expensive endpoints.
+  var outboundLimiter = createRateLimiter({
+    max: parseInt(process.env.OUTBOUND_RATE_LIMIT, 10) || 5
+  });
+  var queryLimiter = createRateLimiter({
+    max: parseInt(process.env.QUERY_RATE_LIMIT, 10) || 30
+  });
+  httpServer.app.use("/api/outbound-call", outboundLimiter);
+  httpServer.app.use("/api/query", queryLimiter);
 
   // ========== OUTBOUND CALLING ROUTES ==========
   setupOutboundRoutes({

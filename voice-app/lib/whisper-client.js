@@ -10,6 +10,7 @@ const WaveFile = require("wavefile").WaveFile;
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const metrics = require("./metrics");
 const { withRetry } = require("./retry");
 
 // Lazy-initialized clients
@@ -98,6 +99,8 @@ async function transcribe(audioBuffer, options = {}) {
     language = "en"
   } = options;
 
+  metrics.inc('voice_stt_requests_total', 1, { provider: STT_PROVIDER });
+
   // Convert PCM to WAV if needed
   let wavBuffer;
   if (format === "pcm") {
@@ -145,9 +148,13 @@ async function transcribe(audioBuffer, options = {}) {
     }
 
     const timestamp = new Date().toISOString();
+    metrics.inc('voice_stt_success_total', 1, { provider: STT_PROVIDER });
     console.log("[" + timestamp + "] WHISPER Transcribed (" + STT_PROVIDER + "): " + transcription.substring(0, 100) + (transcription.length > 100 ? "..." : ""));
 
     return transcription;
+  } catch (error) {
+    metrics.inc('voice_stt_failures_total', 1, { provider: STT_PROVIDER });
+    throw error;
   } finally {
     // Clean up the temp directory and file.
     try {
