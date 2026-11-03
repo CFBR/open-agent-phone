@@ -114,6 +114,34 @@ services:
     # Port: 8880 HTTP (OpenAI-compatible /v1/audio/speech)
 
   # ------------------------------------------------------------------
+  # Speaches — Local STT (faster-whisper, OpenAI-compatible)
+  # ------------------------------------------------------------------
+  # Optional. Start with:
+  #   docker compose -f docker-compose.full.yml --profile local-stt up -d
+  # Then set STT_PROVIDER=local and LOCAL_WHISPER_URL=http://127.0.0.1:7000.
+  # Image is pinned to the latest-cpu tag published on 2026-11-03.
+  # ------------------------------------------------------------------
+  faster-whisper:
+    image: ghcr.io/speaches-ai/speaches@sha256:21e3df06d842fb7802ab470dd77c25f0e8c0d22950e8d8c6ae886e851af53ef8
+    profiles: ["local-stt"]
+    container_name: faster-whisper
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      UVICORN_HOST: 127.0.0.1
+      UVICORN_PORT: 7000
+      WHISPER__MODEL: ${WHISPER_MODEL:-Systran/faster-whisper-base}
+    volumes:
+      - whisper-data:/home/ubuntu/.cache/huggingface
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:7000/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    # Port: 7000 HTTP (OpenAI-compatible /v1/audio/transcriptions)
+
+  # ------------------------------------------------------------------
   # AI Backend — Pluggable AI provider (Ollama, Claude CLI, etc.)
   # ------------------------------------------------------------------
   # Default: Ollama (local, free). Set AI_BACKEND in .env to change.
@@ -184,3 +212,4 @@ services:
 # ============================================================================
 volumes:
   ollama-data:
+  whisper-data:
