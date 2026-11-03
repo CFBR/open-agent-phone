@@ -54,19 +54,37 @@ var config = {
   },
   sip: {
     extension: process.env.SIP_EXTENSION || "9000",
-    auth_id: process.env.SIP_AUTH_ID || "Au0XZPTpJY",
-    password: process.env.SIP_AUTH_PASSWORD || "DGHwMW6v25",
-    domain: process.env.SIP_DOMAIN || "hello.networkchuck.com",
-    registrar: process.env.SIP_REGISTRAR || "hello.networkchuck.com",
+    auth_id: process.env.SIP_AUTH_ID || "",
+    password: process.env.SIP_AUTH_PASSWORD || process.env.SIP_PASSWORD || "",
+    domain: process.env.SIP_DOMAIN || "",
+    registrar: process.env.SIP_REGISTRAR || "",
     registrar_port: parseInt(process.env.SIP_REGISTRAR_PORT) || 5060,
     expiry: parseInt(process.env.SIP_EXPIRY) || 3600
   },
-  external_ip: process.env.EXTERNAL_IP || "10.70.7.81",
+  external_ip: process.env.EXTERNAL_IP || "",
   http_host: process.env.HTTP_HOST || "127.0.0.1",
   http_port: parseInt(process.env.HTTP_PORT) || 3000,
   ws_port: parseInt(process.env.WS_PORT) || 3001,
   audio_dir: process.env.AUDIO_DIR || "/tmp/voice-audio"
 };
+
+// Required configuration. These used to have plausible-looking defaults
+// (including someone else's SIP credentials), which made a misconfigured
+// install look healthy while registering the wrong extension.
+function getMissingConfig() {
+  var missing = [];
+  if (!config.sip.domain) missing.push("SIP_DOMAIN");
+  if (!config.sip.registrar) missing.push("SIP_REGISTRAR");
+  if (!config.external_ip) missing.push("EXTERNAL_IP");
+  return missing;
+}
+
+var missingConfig = getMissingConfig();
+if (missingConfig.length > 0) {
+  console.error("\nMissing required configuration: " + missingConfig.join(", "));
+  console.error('Run "claude-phone setup" or set these values in .env before starting.\n');
+  process.exit(1);
+}
 
 // Initialize drachtio SRF
 var srf = new Srf();
@@ -77,6 +95,7 @@ var registrar = null;
 var drachtioConnected = false;
 var freeswitchConnected = false;
 var isReady = false;
+var serversInitialized = false;
 
 // Log startup
 console.log("\n" + "=".repeat(64));
@@ -126,7 +145,11 @@ srf.on("connect", function(err, hostport) {
     });
 
     // Register all devices from config
-    registrar.registerAll(deviceRegistry.getRegistrationConfigs());
+    var registrationConfigs = deviceRegistry.getRegistrationConfigs();
+    registrar.registerAll(registrationConfigs);
+    if (Object.keys(registrationConfigs).length === 0) {
+      console.warn("[DEVICES] No devices with SIP credentials configured. Run \"claude-phone device add\" to add one.");
+    }
   }
 
   checkReadyState();
@@ -135,6 +158,13 @@ srf.on("connect", function(err, hostport) {
 srf.on("error", function(err) {
   console.error("[" + new Date().toISOString() + "] DRACHTIO error: " + err.message);
   drachtioConnected = false;
+  isReady = false;
+});
+
+srf.on("disconnect", function() {
+  console.error("[" + new Date().toISOString() + "] DRACHTIO disconnected");
+  drachtioConnected = false;
+  isReady = false;
 });
 
 // Initialize FreeSWITCH MRF with retry logic
@@ -216,6 +246,9 @@ function initializeServers() {
     console.log("[" + new Date().toISOString() + "] API token authentication ENABLED (VOICE_API_TOKEN set)");
   }
   httpServer.app.use("/api", apiAuth);
+  // Uploaded audio is served without auth (FreeSWITCH must fetch it), but
+  // accepting uploads from the whole network lets anyone fill the disk.
+  httpServer.app.use("/audio", apiAuth);
 
   // ========== OUTBOUND CALLING ROUTES ==========
   setupOutboundRoutes({
@@ -252,6 +285,28 @@ function initializeServers() {
   if (cleanupTimer.unref) cleanupTimer.unref();
 }
 
+// Register the SIP INVITE handler exactly once. Reconnects update readiness
+// without creating a second HTTP server, WebSocket server, or INVITE handler.
+function registerInviteHandler() {
+  srf.invite(function(req, res) {
+    handleInvite(req, res, {
+      audioForkServer: audioForkServer,
+      mediaServer: mediaServer,
+      deviceRegistry: deviceRegistry,
+      config: config,
+      whisperClient: whisperClient,
+      claudeBridge: claudeBridge,
+      ttsService: ttsService,
+      wsPort: config.ws_port,
+      externalIp: config.external_ip
+    }).catch(function(err) {
+      console.error("[" + new Date().toISOString() + "] CALL Error: " + err.message);
+    });
+  });
+
+  console.log("[" + new Date().toISOString() + "] SIP INVITE handler registered");
+}
+
 // Check ready state
 function checkReadyState() {
   if (drachtioConnected && freeswitchConnected && !isReady) {
@@ -259,26 +314,12 @@ function checkReadyState() {
     console.log("\n[" + new Date().toISOString() + "] READY Voice interface is fully connected!");
     console.log("=".repeat(64) + "\n");
 
-    initializeServers();
+    if (!serversInitialized) {
+      serversInitialized = true;
+      initializeServers();
+      registerInviteHandler();
+    }
 
-    // Register SIP INVITE handler
-    srf.invite(function(req, res) {
-      handleInvite(req, res, {
-        audioForkServer: audioForkServer,
-        mediaServer: mediaServer,
-        deviceRegistry: deviceRegistry,
-        config: config,
-        whisperClient: whisperClient,
-        claudeBridge: claudeBridge,
-        ttsService: ttsService,
-        wsPort: config.ws_port,
-        externalIp: config.external_ip
-      }).catch(function(err) {
-        console.error("[" + new Date().toISOString() + "] CALL Error: " + err.message);
-      });
-    });
-
-    console.log("[" + new Date().toISOString() + "] SIP INVITE handler registered");
     console.log("[" + new Date().toISOString() + "] Multi-extension voice interface ready!");
   }
 }

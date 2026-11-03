@@ -29,7 +29,19 @@ const DEFAULT_VOICES = {
   kokoro: 'af_heart'                     // American Female (heart)
 };
 
-const DEFAULT_VOICE_ID = DEFAULT_VOICES[TTS_PROVIDER] || DEFAULT_VOICES.elevenlabs;
+const DEFAULT_VOICE_ID = TTS_PROVIDER === 'elevenlabs'
+  ? (process.env.ELEVENLABS_VOICE_ID || DEFAULT_VOICES.elevenlabs)
+  : (DEFAULT_VOICES[TTS_PROVIDER] || DEFAULT_VOICES.elevenlabs);
+
+/**
+ * Resolve a possibly-null voice ID. Callers pass `null` when a device has no
+ * configured voice; default parameters do not apply to null, so normalise here.
+ * @param {string|null|undefined} voiceId
+ * @returns {string}
+ */
+function resolveVoiceId(voiceId) {
+  return voiceId || DEFAULT_VOICE_ID;
+}
 
 // Audio output directory (set via setAudioDir)
 let audioDir = path.join(__dirname, '../audio-temp');
@@ -112,7 +124,8 @@ async function generateElevenLabs(text, voiceId) {
         use_speaker_boost: true
       }
     },
-    responseType: 'arraybuffer'
+    responseType: 'arraybuffer',
+    timeout: 30000
   });
 
   return { buffer: response.data, ext: 'mp3' };
@@ -157,12 +170,13 @@ async function generateKokoro(text, voiceId) {
  * @param {string} voiceId - Voice ID (provider-specific)
  * @returns {Promise<string>} HTTP URL to audio file
  */
-async function generateSpeech(text, voiceId = DEFAULT_VOICE_ID) {
+async function generateSpeech(text, voiceId) {
   const startTime = Date.now();
+  const resolvedVoiceId = resolveVoiceId(voiceId);
 
   // Cache lookup: reuse an existing file for identical text+voice instead of
   // hitting the TTS provider again. Files may have been cleaned up, so verify.
-  const cachedFilename = ttsCache.get(text, voiceId);
+  const cachedFilename = ttsCache.get(text, resolvedVoiceId);
   if (cachedFilename) {
     const cachedPath = path.join(audioDir, cachedFilename);
     if (fileExists(cachedPath)) {
@@ -170,20 +184,20 @@ async function generateSpeech(text, voiceId = DEFAULT_VOICE_ID) {
       return audioUrls.audioFileUrl(cachedFilename);
     }
     // File was cleaned up; drop the stale entry and regenerate.
-    ttsCache.remove(text, voiceId);
+    ttsCache.remove(text, resolvedVoiceId);
   }
 
   try {
     let result;
 
     if (TTS_PROVIDER === 'kokoro') {
-      result = await withRetry(() => generateKokoro(text, voiceId), { name: 'tts-kokoro' });
+      result = await withRetry(() => generateKokoro(text, resolvedVoiceId), { name: 'tts-kokoro' });
     } else {
       // Default: ElevenLabs
       if (!ELEVENLABS_API_KEY) {
         throw new Error('ELEVENLABS_API_KEY environment variable not set');
       }
-      result = await withRetry(() => generateElevenLabs(text, voiceId), { name: 'tts-elevenlabs' });
+      result = await withRetry(() => generateElevenLabs(text, resolvedVoiceId), { name: 'tts-elevenlabs' });
     }
 
     // Save audio file
@@ -193,7 +207,7 @@ async function generateSpeech(text, voiceId = DEFAULT_VOICE_ID) {
     fs.writeFileSync(filepath, result.buffer);
 
     // Store in cache (bounded; evicts oldest on overflow)
-    ttsCache.set(text, voiceId, filename);
+    ttsCache.set(text, resolvedVoiceId, filename);
 
     const latency = Date.now() - startTime;
     const fileSize = result.buffer.length;
@@ -353,6 +367,8 @@ module.exports = {
   getAvailableVoices,
   isAvailable,
   getProvider,
+  resolveVoiceId,
+  DEFAULT_VOICE_ID,
   // Exposed for testing / cache introspection
   ttsCache,
   TTS_CACHE_MAX

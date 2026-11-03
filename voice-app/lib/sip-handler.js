@@ -61,8 +61,7 @@ async function conversationLoop(endpoint, dialog, callUuid, options, deviceConfi
       wsPort: wsPort,
       deviceConfig: deviceConfig,
       greeting: buildDeviceGreeting(deviceConfig),
-      skipGreeting: false,
-      maxTurns: 20
+      skipGreeting: false
     });
   } finally {
     // Inbound calls own their dialog: hang up when the loop exits.

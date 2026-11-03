@@ -9,6 +9,10 @@
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 3000;
+const fs = require('fs');
+const path = require('path');
+
+const STATIC_DIR = path.join(__dirname, '..', 'static');
 
 let httpHost = process.env.HTTP_HOST || DEFAULT_HOST;
 let httpPort = parseInt(process.env.HTTP_PORT, 10) || DEFAULT_PORT;
@@ -34,12 +38,27 @@ function staticUrl(filename) {
   return `${getBaseUrl()}/static/${filename}`;
 }
 
+/**
+ * Check whether a file exists in voice-app/static. Used to skip optional cues
+ * (for example hold music) instead of requesting a URL that 404s.
+ * @param {string} filename
+ * @returns {boolean}
+ */
+function staticFileExists(filename) {
+  try {
+    return fs.existsSync(path.join(STATIC_DIR, filename));
+  } catch {
+    return false;
+  }
+}
+
 module.exports = {
   setHttpHost,
   setHttpPort,
   getBaseUrl,
   audioFileUrl,
   staticUrl,
+  staticFileExists,
   // Resolved cue URLs (re-evaluated each access so config changes take effect)
   get READY_BEEP_URL() { return staticUrl('ready-beep.wav'); },
   get GOTIT_BEEP_URL() { return staticUrl('gotit-beep.wav'); },
