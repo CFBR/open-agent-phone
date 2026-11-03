@@ -1,6 +1,6 @@
 {
   "name": "claude-phone-cli",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Unified CLI installer for Claude Phone voice interface",
   "type": "module",
   "bin": {

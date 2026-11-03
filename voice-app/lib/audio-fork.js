@@ -167,6 +167,20 @@ class AudioForkSession extends EventEmitter {
     return this._isSpeechFromStats(pcmStats(buf, this._pcmEndian));
   }
 
+  /**
+   * Return a little-endian copy of a PCM chunk. VAD uses the detected endianness
+   * directly, but the STT client assumes L16 LE, so BE streams must be swapped
+   * before they leave the session.
+   */
+  _normalizePcm(buf) {
+    if (this._pcmEndian !== 'BE' || buf.length < 2 || buf.length % 2 !== 0) {
+      return buf;
+    }
+    const copy = Buffer.from(buf);
+    copy.swap16();
+    return copy;
+  }
+
   _onMessage(data) {
     this._messageCount++;
 
@@ -198,6 +212,7 @@ class AudioForkSession extends EventEmitter {
     // samples instead of up to three.
     if (!this._pcmEndian) this._pcmEndian = this._detectEndian(data);
     const stats = pcmStats(data, this._pcmEndian);
+    const pcm = this._normalizePcm(data);
 
     // Log periodically (every 50 chunks or every 5 seconds)
     const now = Date.now();
@@ -210,10 +225,10 @@ class AudioForkSession extends EventEmitter {
       return;
     }
 
-    if (data.length < 2) return;
+    if (pcm.length < 2) return;
 
     const isSpeech = this._isSpeechFromStats(stats);
-    const chunkMs = this._chunkDurationMs(data.length);
+    const chunkMs = this._chunkDurationMs(pcm.length);
 
     // Log speech detection periodically
     if (this._binaryCount % 50 === 1) {
@@ -221,12 +236,12 @@ class AudioForkSession extends EventEmitter {
     }
 
     if (!this._inSpeech) {
-      this._rememberPreRoll(data);
+      this._rememberPreRoll(pcm);
       if (!isSpeech) return;
       this._startUtteranceWithPreRoll();
     }
 
-    this._appendUtterance(data, isSpeech);
+    this._appendUtterance(pcm, isSpeech);
 
     if (isSpeech) this._silenceMs = 0;
     else this._silenceMs += chunkMs;
@@ -345,10 +360,29 @@ class AudioForkServer extends EventEmitter {
 
   stop() {
     if (!this.wss) return;
+
+    // Reject any waiters instead of dropping their promises on the floor.
+    for (const pending of this._pending) {
+      clearTimeout(pending.timeout);
+      try {
+        pending.reject(new Error('Audio fork server stopped'));
+      } catch {
+        // Ignore a rejection from an already-settled promise.
+      }
+    }
+    this._pending = [];
+
+    for (const session of this._sessions.values()) {
+      try {
+        session.ws.close();
+      } catch {
+        // Ignore close errors during shutdown.
+      }
+    }
+    this._sessions.clear();
+
     this.wss.close();
     this.wss = null;
-    this._pending = [];
-    this._sessions.clear();
   }
 
   /**

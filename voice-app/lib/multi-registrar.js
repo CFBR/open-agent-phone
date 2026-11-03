@@ -64,7 +64,7 @@ class MultiRegistrar {
         'To': '<sip:' + config.extension + '@' + config.domain + '>',
         'Contact': '<' + contact + '>;expires=' + config.expiry,
         'Expires': config.expiry,
-        'User-Agent': 'NetworkChuck-VoiceServer/1.0'
+        'User-Agent': 'OpenAgentPhone/1.0'
       },
       auth: {
         username: config.auth_id,
