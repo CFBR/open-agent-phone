@@ -5,7 +5,7 @@ import axios from 'axios';
 import { loadConfig, configExists, getInstallationType } from '../config.js';
 import { checkDocker, getContainerStatus } from '../docker.js';
 import { isServerRunning, getServerPid } from '../process-manager.js';
-import { validateElevenLabsKey, validateOpenRouterKey } from '../validators.js';
+import { validateElevenLabsKey, validateOpenRouterKey, validateKokoro } from '../validators.js';
 import { isReachable, checkClaudeApiServer as checkClaudeApiHealth } from '../network.js';
 import { checkPort } from '../port-check.js';
 
@@ -230,17 +230,39 @@ async function runApiServerChecks(config) {
   const checks = [];
   let passedCount = 0;
 
-  // Check Claude CLI
-  const claudeSpinner = ora('Checking Claude CLI...').start();
-  const claudeResult = await checkClaudeCLI();
-  if (claudeResult.installed) {
-    claudeSpinner.succeed(chalk.green(`Claude CLI installed (v${claudeResult.version})`));
-    passedCount++;
+  const aiBackend = config.api?.aiBackend || 'ollama';
+
+  // Check the configured AI backend, not Claude CLI unconditionally.
+  if (aiBackend === 'claude') {
+    const claudeSpinner = ora('Checking Claude CLI...').start();
+    const claudeResult = await checkClaudeCLI();
+    if (claudeResult.installed) {
+      claudeSpinner.succeed(chalk.green(`Claude CLI installed (v${claudeResult.version})`));
+      passedCount++;
+    } else {
+      claudeSpinner.fail(chalk.red(`Claude CLI not found: ${claudeResult.error}`));
+      console.log(chalk.gray('  → Install Claude CLI: npm install -g @anthropic-ai/claude\n'));
+    }
+    checks.push({ name: 'Claude CLI', passed: claudeResult.installed });
+  } else if (aiBackend === 'ollama') {
+    const ollamaSpinner = ora('Checking Ollama...').start();
+    const ollamaUrl = config.api?.ollamaUrl || 'http://127.0.0.1:11434';
+    try {
+      const response = await axios.get(`${ollamaUrl.replace(/\/$/, '')}/api/version`, { timeout: 5000 });
+      ollamaSpinner.succeed(chalk.green(`Ollama connected (${response.data?.version || 'unknown version'})`));
+      passedCount++;
+      checks.push({ name: 'Ollama', passed: true });
+    } catch (error) {
+      ollamaSpinner.fail(chalk.red(`Ollama not reachable at ${ollamaUrl}: ${error.message}`));
+      console.log(chalk.gray('  → Start Ollama or switch AI_BACKEND in ~/.claude-phone/config.json\n'));
+      checks.push({ name: 'Ollama', passed: false });
+    }
   } else {
-    claudeSpinner.fail(chalk.red(`Claude CLI not found: ${claudeResult.error}`));
-    console.log(chalk.gray('  → Install Claude CLI: npm install -g @anthropic-ai/claude\n'));
+    const backendSpinner = ora(`Checking AI backend (${aiBackend})...`).start();
+    backendSpinner.info(chalk.gray(`AI backend configured: ${aiBackend}`));
+    passedCount++;
+    checks.push({ name: `AI backend (${aiBackend})`, passed: true });
   }
-  checks.push({ name: 'Claude CLI', passed: claudeResult.installed });
 
   // Check local Claude API server
   const apiServerSpinner = ora('Checking Claude API server...').start();
@@ -311,6 +333,21 @@ async function runVoiceServerChecks(config, isPiSplit) {
     checks.push({ name: 'OpenRouter API', passed: openRouterResult.connected });
   }
 
+  // Check local TTS engine (only if configured)
+  if (config.api?.ttsProvider === 'kokoro') {
+    const kokoroSpinner = ora('Checking Kokoro TTS...').start();
+    const kokoroUrl = config.api.kokoroUrl || 'http://127.0.0.1:8880';
+    const kokoroResult = await validateKokoro(kokoroUrl);
+    if (kokoroResult.valid) {
+      kokoroSpinner.succeed(chalk.green(`Kokoro TTS connected at ${kokoroUrl}`));
+      passedCount++;
+    } else {
+      kokoroSpinner.fail(chalk.red(`Kokoro TTS failed: ${kokoroResult.error}`));
+      console.log(chalk.gray('  → Start the kokoro-tts container or switch TTS_PROVIDER\n'));
+    }
+    checks.push({ name: 'Kokoro TTS', passed: kokoroResult.valid });
+  }
+
   // Check Voice-app container
   const voiceAppSpinner = ora('Checking voice-app container...').start();
   const voiceAppResult = await checkVoiceApp();
@@ -328,7 +365,8 @@ async function runVoiceServerChecks(config, isPiSplit) {
     // Pi-split mode: Check API server IP reachability
     const apiIpSpinner = ora('Checking API server IP reachability...').start();
     const apiServerIp = config.deployment.pi.macIp;
-    const apiServerReachable = await isReachable(apiServerIp);
+    const apiServerPort = config.server.claudeApiPort;
+    const apiServerReachable = await isReachable(apiServerIp, apiServerPort);
 
     if (apiServerReachable) {
       apiIpSpinner.succeed(chalk.green(`API server IP reachable (${apiServerIp})`));

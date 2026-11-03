@@ -39,12 +39,17 @@ export async function deviceListCommand() {
   console.log('├' + horizontalLine + '┤');
 
   // Print devices
+  const ttsProvider = config.api?.ttsProvider || 'elevenlabs';
   for (const device of config.devices) {
     const namePad = device.name.padEnd(nameWidth);
     const extPad = device.extension.padEnd(extWidth);
-    const voiceDisplay = device.voiceId.length > voiceWidth
-      ? device.voiceId.substring(0, voiceWidth - 3) + '...'
-      : device.voiceId.padEnd(voiceWidth);
+    const resolvedVoice = ttsProvider === 'kokoro'
+      ? (device.kokoroVoiceId || device.voiceId || '')
+      : (device.elevenlabsVoiceId || device.voiceId || '');
+    const voiceText = resolvedVoice || '[default]';
+    const voiceDisplay = voiceText.length > voiceWidth
+      ? voiceText.substring(0, voiceWidth - 3) + '...'
+      : voiceText.padEnd(voiceWidth);
 
     console.log(`│ ${namePad} │ ${extPad} │ ${voiceDisplay} │`);
   }

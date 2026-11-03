@@ -60,7 +60,7 @@ function getProjectRoot() {
 async function fetchLatestRelease() {
   try {
     const response = await fetch(
-      'https://api.github.com/repos/networkchuck/claude-phone/releases/latest',
+      'https://api.github.com/repos/CFBR/open-agent-phone/releases/latest',
       {
         headers: {
           'User-Agent': 'claude-phone-cli',
@@ -127,9 +127,10 @@ async function updateViaGit(projectRoot) {
       console.log(chalk.green('✓ Changes stashed'));
     }
 
-    // Pull latest
-    console.log(chalk.gray('\nPulling latest changes...'));
-    execSync('git pull origin main', {
+    // Pull latest on the branch that is actually checked out.
+    const pullTarget = branch && branch !== 'unknown' && branch !== 'HEAD' ? branch : 'main';
+    console.log(chalk.gray(`\nPulling latest changes from origin/${pullTarget}...`));
+    execSync(`git pull origin ${pullTarget}`, {
       cwd: projectRoot,
       stdio: 'inherit'
     });
@@ -160,7 +161,7 @@ function showManualInstructions(release) {
   console.log(chalk.bold('   cp ~/.claude-phone/config.json ~/config.json.backup\n'));
 
   console.log(chalk.gray('3. Run the installer:'));
-  console.log(chalk.bold('   curl -sSL https://raw.githubusercontent.com/theNetworkChuck/claude-phone/main/install.sh | bash\n'));
+  console.log(chalk.bold('   curl -sSL https://raw.githubusercontent.com/CFBR/open-agent-phone/main/install.sh | bash\n'));
 
   console.log(chalk.gray('4. Start services:'));
   console.log(chalk.bold('   claude-phone start\n'));
@@ -181,7 +182,7 @@ export async function updateCommand() {
   if (configExists()) {
     console.log(chalk.gray('Backing up configuration...'));
     const config = await loadConfig();
-    const backupPath = `${process.env.HOME}/.claude-phone/config.json.pre-update`;
+    const backupPath = `${process.env.HOME}/.claude-phone/config.json.backup`;
     await saveConfig(config); // This creates a backup automatically
     console.log(chalk.green(`✓ Config backed up to: ${backupPath}`));
   }
@@ -199,7 +200,7 @@ export async function updateCommand() {
       showManualInstructions(release);
     } catch (error) {
       console.log(chalk.red(`\n✗ ${error.message}\n`));
-      console.log(chalk.gray('Visit https://github.com/networkchuck/claude-phone for manual update\n'));
+      console.log(chalk.gray('Visit https://github.com/CFBR/open-agent-phone for manual update\n'));
     }
   }
 }

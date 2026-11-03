@@ -19,6 +19,7 @@ export async function deviceAddCommand() {
   }
 
   const config = await loadConfig();
+  const ttsProvider = config.api?.ttsProvider || 'elevenlabs';
 
   // Gather device information
   const answers = await inquirer.prompt([
@@ -73,9 +74,23 @@ export async function deviceAddCommand() {
     },
     {
       type: 'input',
-      name: 'voiceId',
+      name: 'elevenlabsVoiceId',
       message: 'ElevenLabs voice ID:',
       default: config.api.elevenlabs.defaultVoiceId || '',
+      when: () => ttsProvider === 'elevenlabs',
+      validate: (input) => {
+        if (!input || input.trim() === '') {
+          return 'Voice ID cannot be empty';
+        }
+        return true;
+      }
+    },
+    {
+      type: 'input',
+      name: 'kokoroVoiceId',
+      message: 'Kokoro voice ID (e.g., af_heart, am_adam):',
+      default: config.api.kokoroVoiceId || 'af_heart',
+      when: () => ttsProvider === 'kokoro',
       validate: (input) => {
         if (!input || input.trim() === '') {
           return 'Voice ID cannot be empty';
@@ -91,17 +106,28 @@ export async function deviceAddCommand() {
     }
   ]);
 
-  // Validate voice ID with ElevenLabs API
-  const spinner = ora('Validating voice ID with ElevenLabs...').start();
-  const voiceResult = await validateVoiceId(config.api.elevenlabs.apiKey, answers.voiceId);
+  const elevenlabsVoiceId = answers.elevenlabsVoiceId || '';
+  const kokoroVoiceId = answers.kokoroVoiceId
+    || config.api.kokoroVoiceId
+    || 'af_heart';
 
-  if (!voiceResult.valid) {
-    spinner.fail(chalk.red(`Voice ID validation failed: ${voiceResult.error}`));
-    console.log(chalk.gray('\nPlease check your voice ID and try again.\n'));
-    process.exit(1);
+  // Validate the ElevenLabs voice only when that provider is active.
+  let voiceLabel = kokoroVoiceId;
+  if (ttsProvider === 'elevenlabs') {
+    const spinner = ora('Validating voice ID with ElevenLabs...').start();
+    const voiceResult = await validateVoiceId(config.api.elevenlabs.apiKey, elevenlabsVoiceId);
+
+    if (!voiceResult.valid) {
+      spinner.fail(chalk.red(`Voice ID validation failed: ${voiceResult.error}`));
+      console.log(chalk.gray('\nPlease check your voice ID and try again.\n'));
+      process.exit(1);
+    }
+
+    spinner.succeed(chalk.green(`Voice validated: ${voiceResult.name}`));
+    voiceLabel = `${voiceResult.name} (${elevenlabsVoiceId})`;
+  } else {
+    console.log(chalk.gray(`  Using Kokoro TTS voice: ${kokoroVoiceId} (no API validation needed)`));
   }
-
-  spinner.succeed(chalk.green(`Voice validated: ${voiceResult.name}`));
 
   // Add device to config
   const newDevice = {
@@ -109,7 +135,9 @@ export async function deviceAddCommand() {
     extension: answers.extension,
     authId: answers.authId || answers.extension,
     password: answers.password,
-    voiceId: answers.voiceId,
+    elevenlabsVoiceId: elevenlabsVoiceId,
+    kokoroVoiceId: kokoroVoiceId,
+    voiceId: elevenlabsVoiceId, // legacy ElevenLabs field
     prompt: answers.prompt || `You are ${answers.name}, a helpful AI assistant accessible via phone.`
   };
 
@@ -128,7 +156,7 @@ export async function deviceAddCommand() {
   console.log(chalk.gray('\nDevice details:'));
   console.log(chalk.gray(`  Name: ${newDevice.name}`));
   console.log(chalk.gray(`  Extension: ${newDevice.extension}`));
-  console.log(chalk.gray(`  Voice: ${voiceResult.name} (${newDevice.voiceId})`));
+  console.log(chalk.gray(`  Voice: ${voiceLabel}`));
   console.log(chalk.yellow('\n⚠ Restart services to apply changes:'));
   console.log(chalk.gray('  claude-phone stop'));
   console.log(chalk.gray('  claude-phone start\n'));
