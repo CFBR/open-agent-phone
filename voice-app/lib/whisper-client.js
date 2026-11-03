@@ -8,6 +8,7 @@
 const OpenAI = require("openai");
 const WaveFile = require("wavefile").WaveFile;
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { withRetry } = require("./retry");
 
@@ -31,8 +32,8 @@ function getOpenAIClient() {
       baseURL: "https://openrouter.ai/api/v1",
       apiKey: process.env.OPENROUTER_API_KEY,
       defaultHeaders: {
-        "HTTP-Referer": "https://github.com/theNetworkChuck/claude-phone",
-        "X-Title": "Claude Phone"
+        "HTTP-Referer": "https://github.com/CFBR/open-agent-phone",
+        "X-Title": "Open Agent Phone"
       }
     });
   }
@@ -105,8 +106,11 @@ async function transcribe(audioBuffer, options = {}) {
     wavBuffer = audioBuffer;
   }
 
-  // Write to temp file (Whisper API requires a file)
-  const tempFile = path.join("/tmp", "whisper-" + Date.now() + ".wav");
+  // Write to a unique temp directory (Whisper API requires a file). A bare
+  // Date.now() filename collides when two calls transcribe in the same
+  // millisecond and silently overwrites one caller's audio.
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'whisper-'));
+  const tempFile = path.join(tempDir, 'audio.wav');
   fs.writeFileSync(tempFile, wavBuffer);
 
   try {
@@ -145,9 +149,9 @@ async function transcribe(audioBuffer, options = {}) {
 
     return transcription;
   } finally {
-    // Clean up temp file
+    // Clean up the temp directory and file.
     try {
-      fs.unlinkSync(tempFile);
+      fs.rmSync(tempDir, { recursive: true, force: true });
     } catch (e) {
       // Ignore cleanup errors
     }

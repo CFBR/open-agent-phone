@@ -69,7 +69,7 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
     skipGreeting = false,
     deviceConfig = null,
     greeting = null,
-    maxTurns = 20
+    maxTurns = parseInt(process.env.MAX_CONVERSATION_TURNS, 10) || 20
   } = options;
 
   // Extract devicePrompt and voiceId from deviceConfig (for Cephanie etc)
@@ -104,13 +104,21 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
       await endpoint.play(greetingUrl);
     }
 
-    // Prime Claude with context if this is an outbound call (NON-BLOCKING)
-    // Fire-and-forget: we don't use the response, just establishing session context
-    if (initialContext && callActive) {
-      logger.info('Priming Claude with outbound context (non-blocking)', { callUuid, hasContext: !!context });
+    // Prime the AI with context for outbound calls or structured background
+    // data (NON-BLOCKING). Fire-and-forget: we don't use the response, just
+    // establish session context.
+    if ((initialContext || context) && callActive) {
+      logger.info('Priming AI with call context (non-blocking)', {
+        callUuid,
+        hasInitialContext: !!initialContext,
+        hasContext: !!context
+      });
       const contextBlock = formatContextBlock(context);
+      const opening = initialContext
+        ? `You just called the user to tell them: "${initialContext}". They have answered.`
+        : 'Background context for this call.';
       claudeBridge.query(
-        `[SYSTEM CONTEXT - DO NOT REPEAT]: You just called the user to tell them: "${initialContext}".${contextBlock} They have answered. Now listen to their response and help them.`,
+        `[SYSTEM CONTEXT - DO NOT REPEAT]: ${opening}${contextBlock} Now listen to their response and help them.`,
         { callId: callUuid, devicePrompt: devicePrompt, isSystemPrime: true }
       ).catch(err => logger.warn('Prime query failed', { callUuid, error: err.message }));
     }
@@ -280,9 +288,9 @@ async function runConversationLoop(endpoint, dialog, callUuid, options) {
       const thinkingUrl = await ttsService.generateSpeech(thinkingPhrase, voiceId);
       if (callActive) await endpoint.play(thinkingUrl);
 
-      // 2. Start hold music in background
+      // 2. Start hold music in background when the asset is available.
       let musicPlaying = false;
-      if (callActive) {
+      if (callActive && audioUrls.staticFileExists('hold-music.mp3')) {
         endpoint.play(audioUrls.HOLD_MUSIC_URL).catch(e => {
           logger.warn('Hold music failed', { callUuid, error: e.message });
         });
