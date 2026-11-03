@@ -14,20 +14,6 @@
 #
 # ============================================================================
 
-version: '3.8'
-
-# ============================================================================
-# Default .env values (override in .env)
-# ============================================================================
-x-defaults: &defaults
-  EXTERNAL_IP: 10.0.0.100
-  DRACHTIO_SECRET: cymru
-  DRACHTIO_SIP_PORT: 5070
-  FREESWITCH_SECRET: JambonzR0ck$
-  TTS_PROVIDER: kokoro
-  AI_BACKEND: ollama
-  OLLAMA_MODEL: llama3.2:3b
-
 # ============================================================================
 # Services
 # ============================================================================
@@ -41,18 +27,18 @@ services:
   #    The SBC must be installed natively on your host or via the 3CX
   #    Debian ISO. See docker/sbc/Dockerfile for details.
   #
-  # To skip the SBC: docker compose -f docker-compose.full.yml up -d --scale sbc=0
+  # To skip the SBC entirely, leave the "sbc" profile disabled (default).
   # For port-forwarding SIP, route 5060 UDP/TCP to this server's drachtio.
   #
   # ------------------------------------------------------------------
   sbc:
-    build:
-      context: .
-      dockerfile: docker/sbc/Dockerfile
+    image: alpine:3.20
+    profiles: ["sbc"]
     container_name: sbc
     restart: unless-stopped
     network_mode: host
-    # Command sleeps — SBC must be installed natively
+    # The SBC must be installed natively. This placeholder keeps the compose
+    # graph valid without building an image that cannot run.
     command: ["sleep", "infinity"]
 
   # ------------------------------------------------------------------

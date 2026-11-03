@@ -23,7 +23,7 @@ const program = new Command();
 program
   .name('claude-phone')
   .description('Voice interface for Claude Code via SIP - Call your AI, and your AI can call you')
-  .version('1.0.3');
+  .version('1.0.4');
 
 program
   .command('setup')
