@@ -23,12 +23,15 @@ const CONFIG_PATH = path.join(__dirname, '../config/devices.json');
 const MORPHEUS_DEFAULT = {
   name: 'Morpheus',
   extension: '9000',
-  authId: 'Au0XZPTpJY',
-  password: 'DGHwMW6v25',
+  // Credentials intentionally blank. A default that ships with real credentials
+  // silently registers someone else's extension. Run `claude-phone setup` or
+  // `claude-phone device add`, or set these in devices.json.
+  authId: '',
+  password: '',
   elevenlabsVoiceId: 'JAgnJveGGUh4qy4kh6dF',
   kokoroVoiceId: 'af_heart',
   voiceId: 'JAgnJveGGUh4qy4kh6dF', // legacy fallback
-  prompt: 'You are Morpheus, Chuck\'s principal AI assistant. You are meticulous, systematic, and excellence-driven. Keep voice responses under 40 words.'
+  prompt: 'You are Morpheus, the principal AI assistant. You are meticulous, systematic, and excellence-driven. Keep voice responses under 40 words.'
 };
 
 /**
@@ -158,7 +161,11 @@ class DeviceRegistry {
   }
 
   getDefault() {
-    return { ...MORPHEUS_DEFAULT };
+    const device = this.get(MORPHEUS_DEFAULT.extension) || MORPHEUS_DEFAULT;
+    return {
+      ...device,
+      voiceId: getVoiceIdForDevice(device)
+    };
   }
 
   isLoaded() {

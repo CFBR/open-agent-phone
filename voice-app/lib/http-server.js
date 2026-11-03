@@ -14,6 +14,7 @@ const fs = require('fs').promises;
 const debug = require('debug')('voice-app:http-server');
 const crypto = require('crypto');
 const audioCleanup = require('./audio-cleanup');
+const audioUrls = require('./audio-urls');
 
 // Re-exported for backwards compatibility; the implementation lives in
 // audio-cleanup.js so it can be used/tested without loading express.
@@ -73,7 +74,8 @@ function createHttpServer(audioDir, port = 3000, options = {}) {
     };
     try {
       const extra = await getHealthInfo();
-      res.json({ ...base, ...extra });
+      const status = extra && extra.ready === false ? 'degraded' : 'healthy';
+      res.status(status === 'degraded' ? 503 : 200).json({ ...base, ...extra, status });
     } catch (err) {
       res.json({ ...base, healthError: err.message });
     }
@@ -100,7 +102,7 @@ function createHttpServer(audioDir, port = 3000, options = {}) {
       await fs.writeFile(filepath, audioBuffer);
 
       // Generate URL
-      const url = `http://localhost:${port}/audio-files/${filename}`;
+      const url = audioUrls.audioFileUrl(filename);
 
       debug(`Audio saved, URL: ${url}`);
 
@@ -152,7 +154,7 @@ function createHttpServer(audioDir, port = 3000, options = {}) {
 
     await fs.writeFile(filepath, audioBuffer);
 
-    const url = `http://localhost:${port}/audio-files/${filename}`;
+    const url = audioUrls.audioFileUrl(filename);
     debug(`Audio saved, URL: ${url}`);
 
     return url;
@@ -164,7 +166,7 @@ function createHttpServer(audioDir, port = 3000, options = {}) {
    * @returns {string} Full URL
    */
   function getAudioUrl(filename) {
-    return `http://localhost:${port}/audio-files/${filename}`;
+    return audioUrls.audioFileUrl(filename);
   }
 
   /**

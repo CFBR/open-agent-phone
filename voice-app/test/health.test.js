@@ -83,3 +83,18 @@ maybe('/health survives a throwing getHealthInfo', async function () {
     server.close();
   }
 });
+
+maybe('/health returns 503 when ready is false', async function () {
+  const { server } = createHttpServer('/tmp', 0, {
+    getHealthInfo: () => ({ drachtio: true, freeswitch: false, ready: false })
+  });
+  try {
+    const r = await get(server, '/health');
+    const data = JSON.parse(r.body);
+    assert.strictEqual(r.status, 503);
+    assert.strictEqual(data.status, 'degraded');
+    assert.strictEqual(data.ready, false);
+  } finally {
+    server.close();
+  }
+});
