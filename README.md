@@ -168,7 +168,7 @@ claude-phone api-server    # Starts API wrapper on port 3333
 
 Two text-to-speech engines are available, controlled by the `TTS_PROVIDER` env var:
 
-### ElevenLabs (default — cloud, premium quality)
+### ElevenLabs (cloud, premium quality)
 
 | Setting | Value |
 |---------|-------|
@@ -178,7 +178,7 @@ Two text-to-speech engines are available, controlled by the `TTS_PROVIDER` env v
 | Cost | Per-character billing |
 | Latency | ~300-500ms |
 
-### Kokoro-82M (local — free, open-source, runs on CPU)
+### Kokoro-82M (local, free, open-source, runs on CPU)
 
 | Setting | Value |
 |---------|-------|
@@ -212,11 +212,12 @@ The `openai` npm SDK is reused with `baseURL` pointed at OpenRouter — no new d
 
 ## AI Backend
 
-The `claude-api-server` wraps any AI backend accessible via HTTP. By default it spawns Claude Code CLI (`claude -p`), but the query contract is fully swappable:
+The `claude-api-server` wraps any AI backend accessible via HTTP. By default it calls a local Ollama model; the query contract is fully swappable:
 
-- **Claude Code CLI** (default) — spawns `claude` with session management
-- **Any OpenAI-compatible API** — replace `server.js` logic to call your endpoint
-- **Local LLM** (Ollama, vLLM, etc.) — configure via `CLAUDE_API_URL`
+- **Ollama** (default) — local, free, runs in Docker or on the host
+- **Claude Code CLI** — spawns `claude` with session management
+- **Any OpenAI-compatible API** — OpenAI, OpenRouter, or a custom endpoint
+- **Local LLM** (Ollama, vLLM, etc.) — configure via `AI_BACKEND_URL`
 
 See the [API Query Contract](voice-app/API-QUERY-CONTRACT.md) for the protocol between voice-app and the AI backend.
 
@@ -230,7 +231,7 @@ All components **except the 3CX SBC** can run in Docker containers on a single m
 | **drachtio** | ✓ | `drachtio/drachtio-server` |
 | **freeswitch** | ✓ | `drachtio/drachtio-freeswitch-mrf` |
 | **kokoro-tts** | ✓ | `ghcr.io/remsky/kokoro-fastapi-cpu` |
-| **claude-api-server** | ⚠️ Needs Dockerfile | Requires Claude CLI in container |
+| **claude-api-server** | ✓ | `docker/api-server/Dockerfile` |
 | **3CX SBC** | ⚠️ Community images | Needs official 3CX support or manual setup |
 
 ### claude-api-server in Docker
@@ -310,14 +311,19 @@ See [Outbound API Reference](voice-app/README-OUTBOUND.md) for details.
 
 ### API Authentication (optional)
 
-The voice-app HTTP API can be protected with a shared secret. Set `VOICE_API_TOKEN` in your `.env` and every `/api/*` request must present it — via an `X-API-Token` header or a standard `Authorization: Bearer <token>` header:
+Both APIs support an optional shared secret. Set `VOICE_API_TOKEN` for the voice-app and `CLAUDE_API_TOKEN` for the AI backend. When set, requests must present the token:
+
+- Voice-app `/api/*`: `X-API-Token` header or `Authorization: Bearer <token>`
+- Claude API `/ask`, `/ask-structured`, `/end-session`: same headers
+
+`claude-api-server` binds to `127.0.0.1` by default. Set `CLAUDE_API_HOST=0.0.0.0` only for a remote voice server, and set `CLAUDE_API_TOKEN` at the same time.
 
 ```bash
 curl -H "Authorization: Bearer $VOICE_API_TOKEN" http://localhost:3000/api/devices
 ```
 
-- **Leave `VOICE_API_TOKEN` unset (default)** — the API stays open, fully backward compatible
-- **Set it** — requests without a valid token get `401 Unauthorized`
+- **Leave `VOICE_API_TOKEN` unset (default)**: the API stays open, fully backward compatible
+- **Set it**: requests without a valid token get `401 Unauthorized`
 - Comparison is constant-time to prevent timing attacks
 
 This prevents anyone on your network from triggering outbound calls or running Claude queries against the voice app.

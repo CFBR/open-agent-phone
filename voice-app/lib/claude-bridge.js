@@ -6,6 +6,13 @@
 const axios = require('axios');
 
 const CLAUDE_API_URL = process.env.CLAUDE_API_URL || 'http://localhost:3333';
+const CLAUDE_API_TOKEN = process.env.CLAUDE_API_TOKEN || '';
+
+function authHeaders() {
+  return CLAUDE_API_TOKEN
+    ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CLAUDE_API_TOKEN}` }
+    : { 'Content-Type': 'application/json' };
+}
 
 /**
  * Query Claude via HTTP API with session support
@@ -34,7 +41,7 @@ async function query(prompt, options = {}) {
       { prompt, callId, devicePrompt },
       {
         timeout: timeout * 1000,
-        headers: { 'Content-Type': 'application/json' }
+        headers: authHeaders()
       }
     );
 
@@ -82,7 +89,7 @@ async function endSession(callId) {
       { callId },
       { 
         timeout: 5000,
-        headers: { 'Content-Type': 'application/json' }
+        headers: authHeaders()
       }
     );
     console.log(`[${timestamp}] CLAUDE Session ended: ${callId}`);
