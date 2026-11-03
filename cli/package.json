@@ -1,13 +1,13 @@
 {
   "name": "claude-phone-cli",
-  "version": "1.0.5",
+  "version": "1.0.7",
   "description": "Unified CLI installer for Claude Phone voice interface",
   "type": "module",
   "bin": {
     "claude-phone": "./bin/claude-phone.js"
   },
   "scripts": {
-    "test": "node --test test/**/*.test.js",
+    "test": "node --test test/*.test.js",
     "lint": "eslint ."
   },
   "keywords": [

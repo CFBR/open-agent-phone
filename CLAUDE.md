@@ -55,7 +55,6 @@ Claude Phone gives your Claude Code installation a phone number through 3CX PBX 
 ```
 claude-phone/
 ├── CLAUDE.md                 # This file
-├── CONSTITUTION.md           # DevFlow 2.0 development principles
 ├── README.md                 # User-facing documentation
 ├── install.sh                # One-command installer
 ├── package.json              # Root package (hooks, linting, tests)
@@ -66,21 +65,10 @@ claude-phone/
 ├── .env.example              # Environment template
 ├──
 ├── docker/                   # Custom Docker images
-│   ├── sbc/                  # 3CX SBC container
-│   │   ├── Dockerfile
-│   │   └── entrypoint.sh
+│   ├── freeswitch/           # FreeSWITCH media server image
+│   ├── sbc/                  # 3CX SBC notes (install natively)
 │   └── api-server/           # AI backend container (Ollama/Claude/etc.)
 │       └── Dockerfile
-│
-├── .claude/commands/         # DevFlow slash commands
-│   ├── feature.md            # /feature spec|start|ship
-│   ├── test.md               # /test
-│   ├── fix.md                # /fix [N]
-│   ├── issues.md             # /issues
-│   ├── investigate.md        # /investigate
-│   ├── project.md            # /project
-│   ├── batch.md              # /batch
-│   └── design.md             # /design
 │
 ├── cli/                      # Unified CLI tool
 │   ├── package.json
@@ -126,7 +114,7 @@ claude-phone/
 │   ├── package.json
 │   ├── index.js              # Main entry point
 │   ├── config/
-│   │   └── devices.json      # Device configurations
+│   │   └── devices.json.example  # Device configuration format
 │   ├── lib/
 │   │   ├── audio-fork.js     # WebSocket audio streaming
 │   │   ├── claude-bridge.js  # HTTP client for Claude API
@@ -140,7 +128,6 @@ claude-phone/
 │   │   ├── outbound-routes.js    # Outbound API endpoints
 │   │   ├── outbound-session.js   # Outbound call sessions
 │   │   ├── query-routes.js   # Query API endpoints
-│   │   ├── registrar.js      # Single SIP registration
 │   │   ├── sip-handler.js    # Inbound call handling
 │   │   ├── tts-service.js    # TTS (ElevenLabs or local Kokoro-82M)
 │   │   └── whisper-client.js # OpenAI Whisper STT
@@ -151,6 +138,7 @@ claude-phone/
 ├── claude-api-server/        # HTTP wrapper for Claude CLI
 │   ├── package.json
 │   ├── server.js             # Express server
+│   ├── session-store.js      # Per-call session and history storage
 │   └── structured.js         # JSON validation helpers
 │
 ├── docs/
@@ -164,7 +152,7 @@ claude-phone/
 
 ```bash
 # One-line install
-curl -sSL https://raw.githubusercontent.com/theNetworkChuck/claude-phone/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/CFBR/open-agent-phone/main/install.sh | bash
 
 # Setup and run
 claude-phone setup    # Interactive configuration
@@ -253,4 +241,3 @@ See `.env.example` for all variables. Key ones:
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues
 - [voice-app/DEPLOYMENT.md](voice-app/DEPLOYMENT.md) - Production deployment
 - [voice-app/README-OUTBOUND.md](voice-app/README-OUTBOUND.md) - Outbound API
-- [CONSTITUTION.md](CONSTITUTION.md) - DevFlow principles
