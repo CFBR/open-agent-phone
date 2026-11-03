@@ -442,7 +442,16 @@ function setupRoutes(deps) {
   });
 }
 
+/**
+ * Replace the media server used by outbound routes after a reconnect.
+ * @param {Object|null} server - FreeSWITCH media server
+ */
+function setMediaServer(server) {
+  mediaServer = server || null;
+}
+
 module.exports = {
   router: router,
-  setupRoutes: setupRoutes
+  setupRoutes: setupRoutes,
+  setMediaServer: setMediaServer
 };

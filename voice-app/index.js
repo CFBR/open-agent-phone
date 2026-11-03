@@ -26,11 +26,13 @@ var MultiRegistrar = require("./lib/multi-registrar");
 // Connection retry utility
 var connectionRetry = require("./lib/connection-retry");
 var connectWithRetry = connectionRetry.connectWithRetry;
+var recovery = require("./lib/recovery");
 
 // Import outbound calling routes
 var outboundModule = require("./lib/outbound-routes");
 var outboundRouter = outboundModule.router;
 var setupOutboundRoutes = outboundModule.setupRoutes;
+var setOutboundMediaServer = outboundModule.setMediaServer;
 
 // Import query routes
 var queryModule = require("./lib/query-routes");
@@ -96,6 +98,20 @@ var drachtioConnected = false;
 var freeswitchConnected = false;
 var isReady = false;
 var serversInitialized = false;
+var shuttingDown = false;
+var drachtioReconnectTimer = null;
+var drachtioReconnectAttempt = 0;
+var freeswitchRecovery = null;
+
+var recoveryTimeoutMs = parseInt(process.env.RECOVERY_TIMEOUT_MS, 10);
+if (isNaN(recoveryTimeoutMs)) recoveryTimeoutMs = 300000;
+var readinessWatchdog = recovery.createReadinessWatchdog({
+  timeoutMs: recoveryTimeoutMs,
+  onTimeout: function() {
+    console.error("[" + new Date().toISOString() + "] Voice interface did not recover in time, exiting for supervisor restart");
+    process.exit(1);
+  }
+});
 
 // Log startup
 console.log("\n" + "=".repeat(64));
@@ -115,16 +131,86 @@ console.log("  - Mix Type:    " + (process.env.AUDIO_FORK_MIXTYPE || "L") + " (c
 console.log("\n[DEVICES] Loaded " + Object.keys(deviceRegistry.getAllDevices()).length + " device extensions");
 console.log("\nWaiting for connections...\n");
 
-// Connect to drachtio
-srf.connect({
-  host: config.drachtio.host,
-  port: config.drachtio.port,
-  secret: config.drachtio.secret
-});
+// Connect to drachtio, with reconnect support.
+function connectDrachtio() {
+  try {
+    srf.connect({
+      host: config.drachtio.host,
+      port: config.drachtio.port,
+      secret: config.drachtio.secret
+    });
+  } catch (err) {
+    console.error("[" + new Date().toISOString() + "] DRACHTIO connect failed: " + err.message);
+    scheduleDrachtioReconnect();
+  }
+}
+
+function scheduleDrachtioReconnect() {
+  if (shuttingDown || drachtioReconnectTimer) return;
+  drachtioReconnectAttempt++;
+  var delay = Math.min(30000, 1000 * Math.pow(2, Math.max(0, drachtioReconnectAttempt - 1)));
+  console.error("[" + new Date().toISOString() + "] DRACHTIO reconnect attempt " + drachtioReconnectAttempt + " in " + delay + "ms");
+  drachtioReconnectTimer = setTimeout(function() {
+    drachtioReconnectTimer = null;
+    if (!shuttingDown) connectDrachtio();
+  }, delay);
+  if (drachtioReconnectTimer.unref) drachtioReconnectTimer.unref();
+}
+
+/**
+ * Rebuild registrations after a reconnect. A stopped registrar is discarded so
+ * every connection gets a fresh set of refresh and retry timers.
+ */
+function startRegistrations(localAddress) {
+  if (registrar) {
+    registrar.stop();
+    registrar = null;
+  }
+
+  registrar = new MultiRegistrar(srf, {
+    domain: config.sip.domain,
+    registrar: config.sip.registrar,
+    registrar_port: config.sip.registrar_port,
+    local_address: localAddress,
+    local_port: parseInt(process.env.DRACHTIO_SIP_PORT) || 5060,
+    expiry: config.sip.expiry
+  });
+
+  var registrationConfigs = deviceRegistry.getRegistrationConfigs();
+  registrar.registerAll(registrationConfigs);
+  if (Object.keys(registrationConfigs).length === 0) {
+    console.warn("[DEVICES] No devices with SIP credentials configured. Run \"claude-phone device add\" to add one.");
+  }
+}
+
+function handleDrachtioDown(reason) {
+  if (shuttingDown) return;
+  console.error("[" + new Date().toISOString() + "] DRACHTIO " + reason);
+  drachtioConnected = false;
+  isReady = false;
+
+  if (registrar) {
+    registrar.stop();
+    registrar = null;
+  }
+
+  if (readinessWatchdog) readinessWatchdog.arm();
+  scheduleDrachtioReconnect();
+}
 
 srf.on("connect", function(err, hostport) {
+  if (err) {
+    handleDrachtioDown("connect error: " + err.message);
+    return;
+  }
+
   console.log("[" + new Date().toISOString() + "] DRACHTIO Connected at " + hostport);
   drachtioConnected = true;
+  drachtioReconnectAttempt = 0;
+  if (drachtioReconnectTimer) {
+    clearTimeout(drachtioReconnectTimer);
+    drachtioReconnectTimer = null;
+  }
 
   var localAddress = config.external_ip;
   if (hostport && hostport.length > 0) {
@@ -133,39 +219,24 @@ srf.on("connect", function(err, hostport) {
   }
   console.log("[DRACHTIO] Local SIP address: " + localAddress);
 
-  // Start Multi-Registration for all devices
-  if (!registrar) {
-    registrar = new MultiRegistrar(srf, {
-      domain: config.sip.domain,
-      registrar: config.sip.registrar,
-      registrar_port: config.sip.registrar_port,
-      local_address: localAddress,
-      local_port: parseInt(process.env.DRACHTIO_SIP_PORT) || 5060,
-      expiry: config.sip.expiry
-    });
-
-    // Register all devices from config
-    var registrationConfigs = deviceRegistry.getRegistrationConfigs();
-    registrar.registerAll(registrationConfigs);
-    if (Object.keys(registrationConfigs).length === 0) {
-      console.warn("[DEVICES] No devices with SIP credentials configured. Run \"claude-phone device add\" to add one.");
-    }
-  }
-
+  startRegistrations(localAddress);
   checkReadyState();
 });
 
 srf.on("error", function(err) {
   console.error("[" + new Date().toISOString() + "] DRACHTIO error: " + err.message);
-  drachtioConnected = false;
-  isReady = false;
+  if (drachtioConnected || isReady) {
+    handleDrachtioDown("error: " + err.message);
+  } else {
+    scheduleDrachtioReconnect();
+  }
 });
 
 srf.on("disconnect", function() {
-  console.error("[" + new Date().toISOString() + "] DRACHTIO disconnected");
-  drachtioConnected = false;
-  isReady = false;
+  handleDrachtioDown("disconnected");
 });
+
+connectDrachtio();
 
 // Initialize FreeSWITCH MRF with retry logic
 var mrf = new Mrf(srf);
@@ -179,6 +250,60 @@ function connectToFreeswitch() {
   });
 }
 
+function attachMediaServerHandlers(ms) {
+  if (!ms || typeof ms.on !== "function") return;
+  ms.on("error", function(err) {
+    console.error("[" + new Date().toISOString() + "] FREESWITCH error: " + err.message);
+    handleFreeswitchDown("error: " + err.message);
+  });
+  ms.on("disconnect", function() {
+    handleFreeswitchDown("disconnected");
+  });
+}
+
+function handleMediaServer(ms) {
+  mediaServer = ms;
+  freeswitchConnected = true;
+  console.log("[" + new Date().toISOString() + "] FREESWITCH Ready for calls");
+
+  if (serversInitialized) {
+    setOutboundMediaServer(ms);
+  }
+  attachMediaServerHandlers(ms);
+  checkReadyState();
+}
+
+function handleFreeswitchDown(reason) {
+  if (shuttingDown) return;
+  if (!freeswitchConnected && !isReady) return;
+
+  console.error("[" + new Date().toISOString() + "] FREESWITCH " + reason);
+  freeswitchConnected = false;
+  isReady = false;
+  mediaServer = null;
+
+  if (serversInitialized) {
+    setOutboundMediaServer(null);
+  }
+  if (readinessWatchdog) readinessWatchdog.arm();
+  if (freeswitchRecovery) freeswitchRecovery.schedule();
+}
+
+if (mrf && typeof mrf.on === "function") {
+  mrf.on("error", function(err) {
+    console.error("[" + new Date().toISOString() + "] FREESWITCH MRF error: " + err.message);
+    handleFreeswitchDown("mrf error: " + err.message);
+  });
+}
+
+freeswitchRecovery = recovery.createReconnectController({
+  connect: connectToFreeswitch,
+  onConnected: handleMediaServer,
+  onError: function(err, attempt) {
+    console.error("[" + new Date().toISOString() + "] FREESWITCH reconnect attempt " + attempt + " failed: " + err.message);
+  }
+});
+
 // Connect with exponential backoff retry
 // Retry schedule: 1s, 2s, 3s, 5s, 5s, 5s, 10s, 10s, 10s, 10s (max 10 retries)
 connectWithRetry(connectToFreeswitch, {
@@ -186,12 +311,7 @@ connectWithRetry(connectToFreeswitch, {
   retryDelays: [1000, 2000, 3000, 5000, 5000, 5000, 10000, 10000, 10000, 10000],
   name: 'FREESWITCH'
 })
-.then(function(ms) {
-  mediaServer = ms;
-  freeswitchConnected = true;
-  console.log("[" + new Date().toISOString() + "] FREESWITCH Ready for calls");
-  checkReadyState();
-})
+.then(handleMediaServer)
 .catch(function(err) {
   console.error("[" + new Date().toISOString() + "] FREESWITCH Connection failed permanently: " + err.message);
   console.error("[" + new Date().toISOString() + "] Please check:");
@@ -217,6 +337,7 @@ function initializeServers() {
         drachtio: drachtioConnected,
         freeswitch: freeswitchConnected,
         ready: isReady,
+        reconnecting: Boolean(drachtioReconnectTimer || (freeswitchRecovery && freeswitchRecovery.pending)),
         devices: Object.keys(deviceRegistry.getAllDevices()).length,
         claudeApiUrl: process.env.CLAUDE_API_URL || 'http://localhost:3333',
         ttsProvider: ttsService.getProvider ? ttsService.getProvider() : undefined,
@@ -224,10 +345,20 @@ function initializeServers() {
       };
     }
   });
+  if (httpServer.server && typeof httpServer.server.on === "function") {
+    httpServer.server.on("error", function(err) {
+      console.error("[" + new Date().toISOString() + "] HTTP server error: " + err.message);
+      process.exit(1);
+    });
+  }
   console.log("[" + new Date().toISOString() + "] HTTP Server started on port " + config.http_port);
 
   // WebSocket server for audio fork
   audioForkServer = new AudioForkServer({ port: config.ws_port });
+  audioForkServer.on("error", function(err) {
+    console.error("[" + new Date().toISOString() + "] Audio fork server error: " + err.message);
+    process.exit(1);
+  });
   audioForkServer.start();
   audioForkServer.on("listening", function() {
     console.log("[" + new Date().toISOString() + "] WEBSOCKET Audio fork server started on port " + config.ws_port);
@@ -311,6 +442,7 @@ function registerInviteHandler() {
 function checkReadyState() {
   if (drachtioConnected && freeswitchConnected && !isReady) {
     isReady = true;
+    if (readinessWatchdog) readinessWatchdog.disarm();
     console.log("\n[" + new Date().toISOString() + "] READY Voice interface is fully connected!");
     console.log("=".repeat(64) + "\n");
 
@@ -327,6 +459,13 @@ function checkReadyState() {
 // Graceful shutdown
 function shutdown(signal) {
   console.log("\n[" + new Date().toISOString() + "] Received " + signal + ", shutting down...");
+  shuttingDown = true;
+  if (drachtioReconnectTimer) {
+    clearTimeout(drachtioReconnectTimer);
+    drachtioReconnectTimer = null;
+  }
+  if (freeswitchRecovery) freeswitchRecovery.stop();
+  if (readinessWatchdog) readinessWatchdog.disarm();
   if (registrar) registrar.stop();
   if (httpServer) httpServer.close();
   if (audioForkServer) audioForkServer.stop();
