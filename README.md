@@ -199,7 +199,7 @@ Kokoro uses the OpenAI-compatible `/v1/audio/speech` endpoint — the same forma
 
 ## Speech-to-Text
 
-STT uses OpenRouter's OpenAI-compatible endpoint instead of direct OpenAI:
+STT uses an OpenAI-compatible endpoint. The default is OpenRouter's Whisper endpoint:
 
 | Setting | Value |
 |---------|-------|
@@ -208,7 +208,25 @@ STT uses OpenRouter's OpenAI-compatible endpoint instead of direct OpenAI:
 | Model | `openai/whisper-1` |
 | Why | Model-agnostic, bring-your-own-key, no direct OpenAI dependency |
 
-The `openai` npm SDK is reused with `baseURL` pointed at OpenRouter — no new dependencies, and you can point it at any OpenAI-compatible STT endpoint.
+The `openai` npm SDK is reused with `baseURL` pointed at OpenRouter, and you can point it at any OpenAI-compatible STT endpoint.
+
+### Local speech-to-text
+
+For a fully local STT path, start the optional Speaches/faster-whisper profile:
+
+```bash
+docker compose -f docker-compose.full.yml --profile local-stt up -d
+```
+
+Then set:
+
+```bash
+STT_PROVIDER=local
+LOCAL_WHISPER_URL=http://127.0.0.1:7000
+WHISPER_MODEL=Systran/faster-whisper-base
+```
+
+The container image is pinned by digest, exposes port 7000, and serves the OpenAI-compatible `/v1/audio/transcriptions` endpoint. Change `WHISPER_MODEL` for a larger model if you have the CPU and memory.
 
 ## AI Backend
 
