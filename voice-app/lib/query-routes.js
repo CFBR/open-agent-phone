@@ -19,6 +19,13 @@ let claudeBridge = null;
 
 // Claude API server URL (same as used by claudeBridge)
 const CLAUDE_API_URL = process.env.CLAUDE_API_URL || 'http://localhost:3333';
+const CLAUDE_API_TOKEN = process.env.CLAUDE_API_TOKEN || '';
+
+function claudeApiHeaders() {
+  return CLAUDE_API_TOKEN
+    ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CLAUDE_API_TOKEN}` }
+    : { 'Content-Type': 'application/json' };
+}
 
 /**
  * Extract JSON from Claude response
@@ -111,6 +118,7 @@ function validateQueryRequest(body) {
  */
 router.post('/query', async (req, res) => {
   const startTime = Date.now();
+  let callId = null;
 
   try {
     // Validate request
@@ -140,7 +148,7 @@ router.post('/query', async (req, res) => {
 
     // Generate unique callId for this query (enables skills access)
     // Must be a bare UUID - Claude CLI rejects prefixes
-    const callId = crypto.randomUUID();
+    callId = crypto.randomUUID();
 
     // Resolve device if specified
     let device = null;
@@ -204,7 +212,7 @@ router.post('/query', async (req, res) => {
         },
         {
           timeout: timeout * 1000,
-          headers: { 'Content-Type': 'application/json' }
+          headers: claudeApiHeaders()
         }
       );
 
@@ -309,6 +317,12 @@ router.post('/query', async (req, res) => {
       message: 'An internal error occurred',
       duration_ms: duration
     });
+  } finally {
+    // Every programmatic query gets its own callId. End it so the API server
+    // does not keep a Claude session or chat history until the idle sweep.
+    if (callId && claudeBridge) {
+      await claudeBridge.endSession(callId);
+    }
   }
 });
 
