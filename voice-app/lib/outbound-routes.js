@@ -9,6 +9,7 @@ const express = require('express');
 const router = express.Router();
 const { URL } = require('url');
 const logger = require('./logger');
+const metrics = require('./metrics');
 const { OutboundSession, getSession, getAllSessions } = require('./outbound-session');
 const { initiateOutboundCall, playMessage, hangupCall } = require('./outbound-handler');
 const { runConversationLoop } = require('./conversation-loop');
@@ -217,6 +218,7 @@ router.post('/outbound-call', async function(req, res) {
     });
 
     var callId = session.callId;
+    metrics.inc('voice_outbound_calls_total', 1, { mode: mode });
 
     logger.info('Processing outbound call request', {
       callId: callId,
@@ -299,6 +301,7 @@ router.post('/outbound-call', async function(req, res) {
         }
 
       } catch (error) {
+        metrics.inc('voice_outbound_failures_total', 1, { mode: mode });
         logger.error('Outbound call failed', {
           callId: callId,
           error: error.message,
