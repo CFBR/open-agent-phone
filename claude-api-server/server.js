@@ -15,9 +15,11 @@
 
 const express = require('express');
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { URL } = require('url');
 const {
@@ -37,7 +39,7 @@ const PORT = process.env.PORT || 3333;
  * with your zsh profile fully loaded.
  */
 function buildClaudeEnvironment() {
-  const HOME = process.env.HOME || '/Users/networkchuck';
+  const HOME = process.env.HOME || os.homedir();
   const PAI_DIR = path.join(HOME, '.claude');
 
   // Load ~/.claude/.env (all API keys)
@@ -130,6 +132,12 @@ function endSessionStorage(callId) { return sessionStore.end(callId); }
 // Model selection - Sonnet for balanced speed/quality
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
 
+// Network and request limits
+const API_TOKEN = process.env.CLAUDE_API_TOKEN || '';
+const BIND_HOST = process.env.CLAUDE_API_HOST || '127.0.0.1';
+const CLAUDE_TIMEOUT_MS = parseInt(process.env.CLAUDE_TIMEOUT_MS, 10) || 120000;
+const MAX_HISTORY_MESSAGES = parseInt(process.env.MAX_HISTORY_MESSAGES, 10) || 40;
+
 // ============================================
 // AI Backend Router Configuration
 // ============================================
@@ -142,11 +150,14 @@ const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
 //   claude     — Claude Code CLI (original behavior, needs subscription)
 //
 const AI_BACKEND = (process.env.AI_BACKEND || 'ollama').toLowerCase();
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://ollama:11434';
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 const AI_BACKEND_URL = process.env.AI_BACKEND_URL || '';
 
 console.log(`[STARTUP] AI backend: ${AI_BACKEND}`);
+if (AI_BACKEND === 'claude') {
+  console.warn('[STARTUP] Claude backend runs with --dangerously-skip-permissions. Keep this server behind CLAUDE_API_TOKEN and a trusted network.');
+}
 if (AI_BACKEND === 'ollama') {
   console.log(`[STARTUP] Ollama URL: ${OLLAMA_URL}, model: ${OLLAMA_MODEL}`);
 }
@@ -212,6 +223,29 @@ async function queryClaude({ fullPrompt, callId, timestamp }) {
 
     let stdout = '';
     let stderr = '';
+    let settled = false;
+
+    function finish(result) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    }
+
+    const timer = setTimeout(() => {
+      try {
+        claude.kill('SIGKILL');
+      } catch {
+        // Process may have already exited.
+      }
+      finish({
+        success: false,
+        response: '',
+        sessionId: null,
+        duration_ms: Date.now() - startTime,
+        error: `Claude timed out after ${CLAUDE_TIMEOUT_MS}ms`,
+      });
+    }, CLAUDE_TIMEOUT_MS);
 
     claude.stdin.end();
     claude.stdout.on('data', (data) => { stdout += data.toString(); });
@@ -219,16 +253,16 @@ async function queryClaude({ fullPrompt, callId, timestamp }) {
 
     claude.on('error', (error) => {
       const duration_ms = Date.now() - startTime;
-      resolve({ success: false, response: stderr, sessionId: null, duration_ms, error: error.message });
+      finish({ success: false, response: stderr, sessionId: null, duration_ms, error: error.message });
     });
 
     claude.on('close', (code) => {
       const duration_ms = Date.now() - startTime;
       if (code !== 0) {
-        resolve({ success: false, response: stdout, sessionId: null, duration_ms, error: stderr || `Exit code ${code}` });
+        finish({ success: false, response: stdout, sessionId: null, duration_ms, error: stderr || `Exit code ${code}` });
       } else {
         const { response, sessionId } = parseClaudeStdout(stdout);
-        resolve({ success: true, response, sessionId, duration_ms });
+        finish({ success: true, response, sessionId, duration_ms });
       }
     });
   });
@@ -287,18 +321,19 @@ function httpRequest(url, options, body) {
 async function queryOpenAI({ fullPrompt, callId, baseURL, apiKey, model }) {
   const startTime = Date.now();
 
-  // Build message history for conversation context
-  let messages = [];
+  // Build a request-local history so a failed request does not leave a stray
+  // user turn behind, and trim it so long calls do not grow without bound.
+  let history = [];
   if (callId && chatHistories.has(callId)) {
-    messages = chatHistories.get(callId);
+    history = chatHistories.get(callId);
   }
-  messages.push({ role: 'user', content: fullPrompt });
+  const requestMessages = [...history, { role: 'user', content: fullPrompt }];
   if (callId) touchSession(callId);
 
   const url = baseURL.replace(/\/+$/, '') + '/v1/chat/completions';
   const body = {
     model: model || process.env.AI_MODEL || 'gpt-4o-mini',
-    messages,
+    messages: requestMessages,
     stream: false,
   };
 
@@ -325,10 +360,10 @@ async function queryOpenAI({ fullPrompt, callId, baseURL, apiKey, model }) {
 
     const content = response.data?.choices?.[0]?.message?.content || '';
 
-    // Store conversation history
+    // Store conversation history only after a successful response.
     if (callId) {
-      messages.push({ role: 'assistant', content });
-      chatHistories.set(callId, messages);
+      const updated = [...requestMessages, { role: 'assistant', content }];
+      chatHistories.set(callId, updated.slice(-MAX_HISTORY_MESSAGES));
       touchSession(callId);
     }
 
@@ -461,12 +496,39 @@ Example response:
 // Middleware
 app.use(express.json());
 
+/**
+ * Optional shared-secret auth. Set CLAUDE_API_TOKEN to require it on the
+ * mutating endpoints. The health and info endpoints stay public.
+ */
+function timingSafeEqual(a, b) {
+  const ba = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ba.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+
+function requireApiToken(req, res, next) {
+  if (!API_TOKEN) return next();
+  const headerToken = req.get('X-API-Token')
+    || (req.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  if (!headerToken || !timingSafeEqual(headerToken, API_TOKEN)) {
+    return res.status(401).json({
+      success: false,
+      error: 'unauthorized',
+      message: 'Missing or invalid API token',
+    });
+  }
+  next();
+}
+
 // Request logging
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] ${req.method} ${req.path}`);
   next();
 });
+
+app.use(['/ask', '/ask-structured', '/end-session'], requireApiToken);
 
 /**
  * POST /ask
@@ -725,6 +787,8 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'claude-api-server',
+    backend: AI_BACKEND,
+    auth: API_TOKEN ? 'token' : 'none',
     timestamp: new Date().toISOString()
   });
 });
@@ -736,7 +800,7 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     service: 'Claude HTTP API Server',
-    version: '1.0.0',
+    version: '1.0.3',
     endpoints: {
       'POST /ask': 'Send a prompt to Claude',
       'POST /ask-structured': 'Send a prompt and return validated JSON (n8n)',
@@ -746,12 +810,17 @@ app.get('/', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, BIND_HOST, () => {
   console.log('='.repeat(64));
   console.log('Claude HTTP API Server');
   console.log('='.repeat(64));
-  console.log(`\nListening on: http://0.0.0.0:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`\nListening on: http://${BIND_HOST}:${PORT}`);
+  console.log(`Health check: http://${BIND_HOST}:${PORT}/health`);
+  console.log(`Auth: ${API_TOKEN ? 'token required' : 'disabled'}`);
+  if (!API_TOKEN && BIND_HOST !== '127.0.0.1' && BIND_HOST !== 'localhost') {
+    console.warn('\nWARNING: binding to a non-loopback address with auth disabled.');
+    console.warn('Set CLAUDE_API_TOKEN before exposing this server to a network.\n');
+  }
   console.log('\nReady to receive Claude queries from voice interface.\n');
 });
 
