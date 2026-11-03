@@ -1,5 +1,3 @@
-version: '3.8'
-
 # ============================================================================
 # Docker Compose Override for Bridge Mode (Mac Docker Desktop)
 # ============================================================================
@@ -28,7 +26,7 @@ services:
       - "8021:8021/tcp"
       # RTP port range - limited to 100 ports for ~50 concurrent calls
       # WARNING: Don't map more ports - Docker creates a process per port
-      - "20000-20100:20000-20100/udp"
+      - "30000-30100:30000-30100/udp"
 
   voice-app:
     network_mode: bridge
