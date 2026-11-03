@@ -35,6 +35,8 @@ async function initiateOutboundCall(srf, mediaServer, options) {
 
   const callId = uuidv4();
   const startTime = Date.now();
+  let endpoint = null;
+  let uac = null;
 
   try {
     logger.info('Initiating outbound call', {
@@ -46,7 +48,7 @@ async function initiateOutboundCall(srf, mediaServer, options) {
 
     // STEP 1: Create FreeSWITCH endpoint first (Early Offer pattern)
     logger.info('Creating FreeSWITCH endpoint', { callId });
-    const endpoint = await mediaServer.createEndpoint();
+    endpoint = await mediaServer.createEndpoint();
 
     // Get local SDP from FreeSWITCH
     const localSdp = endpoint.local.sdp;
@@ -56,12 +58,23 @@ async function initiateOutboundCall(srf, mediaServer, options) {
     // Internal extensions: dial as-is. External (E.164 with +): add 9 prefix for PSTN
     const isExternal = to.startsWith('+');
     const phoneNumber = isExternal ? '9' + to.replace(/^\+1?/, '') : to;
-    const sipTrunkHost = process.env.SIP_TRUNK_HOST || '10.70.7.50';
-    const defaultCallerId = callerId || process.env.DEFAULT_CALLER_ID || '+15551234567';
+    const sipTrunkHost = process.env.SIP_TRUNK_HOST
+      || process.env.SIP_REGISTRAR
+      || process.env.SIP_DOMAIN;
+    if (!sipTrunkHost) {
+      throw new Error('SIP_TRUNK_HOST, SIP_REGISTRAR, or SIP_DOMAIN must be set for outbound calls');
+    }
+
+    const defaultCallerId = callerId
+      || process.env.DEFAULT_CALLER_ID
+      || (deviceConfig ? deviceConfig.extension : null);
+    if (!defaultCallerId) {
+      throw new Error('DEFAULT_CALLER_ID or callerId is required for outbound calls without a device');
+    }
 
     // SIP Authentication for 3CX extension registration
     const sipAuthUsername = process.env.SIP_AUTH_USERNAME;
-    const sipAuthPassword = process.env.SIP_AUTH_PASSWORD;
+    const sipAuthPassword = process.env.SIP_AUTH_PASSWORD || process.env.SIP_PASSWORD;
 
     const sipUri = 'sip:' + phoneNumber + '@' + sipTrunkHost;
 
@@ -84,7 +97,7 @@ async function initiateOutboundCall(srf, mediaServer, options) {
       localSdp: localSdp,
       headers: {
         'From': fromHeader,
-        'User-Agent': 'NetworkChuck-VoiceServer/1.0',
+        'User-Agent': 'OpenAgentPhone/1.0',
         'X-Call-ID': callId
       }
     };
@@ -108,7 +121,7 @@ async function initiateOutboundCall(srf, mediaServer, options) {
     let isRinging = false;
 
     // Create the outbound call (returns dialog directly, not { uas, uac })
-    const uac = await srf.createUAC(sipUri, uacOptions, {
+    uac = await srf.createUAC(sipUri, uacOptions, {
       cbRequest: function(err, _req) {
         // Called when INVITE is sent
         if (err) {
@@ -177,6 +190,29 @@ async function initiateOutboundCall(srf, mediaServer, options) {
       error: error.message,
       latency
     });
+
+    // Release whatever was allocated before the failure. Without this a failed
+    // INVITE or SDP negotiation leaks a FreeSWITCH endpoint for every attempt.
+    if (uac && !uac.destroyed) {
+      try {
+        await uac.destroy();
+      } catch (destroyError) {
+        logger.warn('Failed to destroy dialog after outbound failure', {
+          callId,
+          error: destroyError.message
+        });
+      }
+    }
+    if (endpoint) {
+      try {
+        await endpoint.destroy();
+      } catch (destroyError) {
+        logger.warn('Failed to destroy endpoint after outbound failure', {
+          callId,
+          error: destroyError.message
+        });
+      }
+    }
 
     // Handle specific SIP error codes
     if (error.status) {

@@ -42,11 +42,12 @@ class OutboundSession extends EventEmitter {
     this.conversationHistory = [];
     this.turnCount = 0;
 
-    // Register in active sessions
-    activeSessions.set(callId, this);
+    // Register under the generated ID, not the constructor argument (which is
+    // null for sessions created from the HTTP API).
+    activeSessions.set(this.callId, this);
 
     logger.info('Outbound session created', {
-      callId,
+      callId: this.callId,
       to: this.to,
       mode: this.mode,
       state: this.state
@@ -99,10 +100,11 @@ class OutboundSession extends EventEmitter {
       this.endedAt = Date.now();
 
       // Keep session for 1 minute for status queries, then remove
-      setTimeout(() => {
+      const cleanupTimer = setTimeout(() => {
         activeSessions.delete(this.callId);
         logger.info('Session cleaned up', { callId: this.callId });
       }, 60000);
+      if (cleanupTimer.unref) cleanupTimer.unref();
     }
   }
 
@@ -127,11 +129,20 @@ class OutboundSession extends EventEmitter {
         reason: reason || undefined
       };
 
-      const response = await fetch(this.webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+
+      let response;
+      try {
+        response = await fetch(this.webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
 
       if (!response.ok) {
         logger.warn('Webhook returned non-200', {
