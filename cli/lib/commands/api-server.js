@@ -4,7 +4,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { loadConfig, configExists } from '../config.js';
 import { getProjectRoot } from '../utils.js';
-import { savePid, removePid } from '../process-manager.js';
+import { savePid, removePid, buildApiServerEnv } from '../process-manager.js';
 
 /**
  * API Server command - Start claude-api-server for remote connections
@@ -15,15 +15,10 @@ import { savePid, removePid } from '../process-manager.js';
 export async function apiServerCommand(options = {}) {
   console.log(chalk.bold.cyan('\n🤖 Claude API Server\n'));
 
-  // Load config to get port if not provided
-  let port = options.port;
-  if (!port && configExists()) {
-    const config = await loadConfig();
-    port = config.server?.claudeApiPort || 3333;
-  }
-  if (!port) {
-    port = 3333; // Final fallback
-  }
+  // Load config to get the port and provider settings if not provided
+  const config = configExists() ? await loadConfig() : {};
+
+  const port = options.port || config.server?.claudeApiPort || 3333;
 
   console.log(chalk.gray(`Starting API server on port ${port}...`));
   console.log(chalk.gray('This wraps Claude Code CLI for Pi connections.\n'));
@@ -34,16 +29,24 @@ export async function apiServerCommand(options = {}) {
   const spinner = ora('Starting server...').start();
 
   try {
+    const env = {
+      ...buildApiServerEnv(config),
+      PORT: port.toString(),
+      // This command exists to serve remote voice servers, so bind to all
+      // interfaces unless the user overrides it.
+      CLAUDE_API_HOST: process.env.CLAUDE_API_HOST || '0.0.0.0'
+    };
+
     const child = spawn('node', [serverPath], {
       env: {
         ...process.env,
-        PORT: port.toString()
+        ...env
       },
       stdio: 'inherit'
     });
 
-    // Save PID
-    savePid('claude-api-server', child.pid);
+    // Use the same PID file as start/stop/status so the process is visible.
+    savePid('server', child.pid);
 
     spinner.succeed(chalk.green('Server started'));
     console.log(chalk.bold.cyan(`\n📡 Listening on port ${port}\n`));
@@ -52,7 +55,7 @@ export async function apiServerCommand(options = {}) {
 
     // Handle cleanup on exit
     const cleanup = () => {
-      removePid('claude-api-server');
+      removePid('server');
       child.kill();
       process.exit(0);
     };
@@ -62,7 +65,7 @@ export async function apiServerCommand(options = {}) {
 
     // Wait for child to exit
     child.on('exit', (code) => {
-      removePid('claude-api-server');
+      removePid('server');
       if (code !== 0) {
         console.log(chalk.red(`\n✗ Server exited with code ${code}\n`));
         process.exit(code);

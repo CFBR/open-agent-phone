@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { spawn } from 'child_process';
-import axios from 'axios';
 import { loadConfig, configExists, getDockerComposePath, getPidPath } from '../config.js';
+import { getApiServerLogPath } from '../process-manager.js';
 import fs from 'fs';
 
 /**
@@ -20,10 +20,10 @@ export async function logsCommand(service = null) {
   const dockerComposePath = getDockerComposePath();
 
   // Validate service argument
-  const validServices = ['voice-app', 'api-server'];
+  const validServices = ['voice-app', 'drachtio', 'freeswitch', 'api-server'];
   if (service && !validServices.includes(service)) {
     console.log(chalk.red(`\n✗ Invalid service: ${service}`));
-    console.log(chalk.gray('  Valid services: voice-app, api-server'));
+    console.log(chalk.gray('  Valid services: voice-app, drachtio, freeswitch, api-server'));
     console.log(chalk.gray('  Or omit service to tail all logs\n'));
     process.exit(1);
   }
@@ -36,12 +36,12 @@ export async function logsCommand(service = null) {
   }
 
   // Handle different service options
-  if (!service || service === 'voice-app') {
+  if (!service || service === 'voice-app' || service === 'drachtio' || service === 'freeswitch') {
     // Docker container logs
     if (!fs.existsSync(dockerComposePath)) {
       console.log(chalk.yellow('⚠ Docker containers not configured'));
       console.log(chalk.gray('  Run "claude-phone start" first\n'));
-      if (service === 'voice-app') {
+      if (service) {
         process.exit(1);
       }
     } else if (!service) {
@@ -49,8 +49,8 @@ export async function logsCommand(service = null) {
       tailBothServices(dockerComposePath, config);
       return;
     } else {
-      // Just voice-app
-      tailDockerLogs(dockerComposePath);
+      // A specific Docker service
+      tailDockerLogs(dockerComposePath, service);
       return;
     }
   }
@@ -74,16 +74,20 @@ export async function logsCommand(service = null) {
 /**
  * Tail Docker container logs
  * @param {string} dockerComposePath - Path to docker-compose.yml
+ * @param {string} [service] - Optional service name
  */
-function tailDockerLogs(dockerComposePath) {
-  const child = spawn('docker', [
+function tailDockerLogs(dockerComposePath, service = null) {
+  const args = [
     'compose',
     '-f',
     dockerComposePath,
     'logs',
     '-f',
     '--tail=50'
-  ], {
+  ];
+  if (service) args.push(service);
+
+  const child = spawn('docker', args, {
     stdio: 'inherit'
   });
 
@@ -106,48 +110,34 @@ function tailDockerLogs(dockerComposePath) {
  * Tail API server logs
  * @param {object} config - Configuration object
  */
-function tailAPIServerLogs(config) {
-  console.log(chalk.gray('Watching Claude API server output...\n'));
+function tailAPIServerLogs(_config) {
+  const logPath = getApiServerLogPath();
 
-  // Since the server runs detached, we can't easily tail its logs
-  // Instead, we'll monitor its health endpoint
-  console.log(chalk.yellow('Note: API server logs are not available (runs detached)'));
-  console.log(chalk.gray('Monitoring health endpoint instead...\n'));
+  if (!fs.existsSync(logPath)) {
+    console.log(chalk.yellow('Note: API server log file not found'));
+    console.log(chalk.gray(`  Expected at: ${logPath}`));
+    console.log(chalk.gray('  Start the API server with "claude-phone start" to create it.\n'));
+    process.exit(1);
+  }
 
-  let consecutiveFailures = 0;
+  console.log(chalk.gray(`Tailing ${logPath}\n`));
 
-  const checkHealth = async () => {
-    try {
-      const response = await axios.get(`http://localhost:${config.server.claudeApiPort}/health`, {
-        timeout: 3000
-      });
-
-      if (response.status === 200) {
-        console.log(chalk.green(`[${new Date().toISOString()}] ✓ API server healthy`));
-        consecutiveFailures = 0;
-      } else {
-        console.log(chalk.yellow(`[${new Date().toISOString()}] ⚠ Unexpected status: ${response.status}`));
-      }
-    } catch (error) {
-      consecutiveFailures++;
-      console.log(chalk.red(`[${new Date().toISOString()}] ✗ Health check failed: ${error.message}`));
-
-      if (consecutiveFailures >= 3) {
-        console.log(chalk.red('\n✗ API server appears to be down. Stopping health checks.\n'));
-        process.exit(1);
-      }
-    }
-  };
-
-  // Check immediately, then every 5 seconds
-  checkHealth();
-  const interval = setInterval(checkHealth, 5000);
+  const child = spawn('tail', ['-f', '-n', '50', logPath], {
+    stdio: 'inherit'
+  });
 
   // Handle Ctrl+C
   process.on('SIGINT', () => {
-    clearInterval(interval);
-    console.log(chalk.gray('\n\nStopped monitoring API server.\n'));
+    child.kill('SIGTERM');
+    console.log(chalk.gray('\n\nStopped tailing API server logs.\n'));
     process.exit(0);
+  });
+
+  child.on('close', (code) => {
+    if (code !== 0 && code !== null) {
+      console.log(chalk.red(`\n✗ Log tail failed with exit code ${code}\n`));
+      process.exit(code);
+    }
   });
 }
 
@@ -157,7 +147,7 @@ function tailAPIServerLogs(config) {
  * @param {object} _config - Configuration object (unused)
  */
 function tailBothServices(dockerComposePath, _config) {
-  console.log(chalk.gray('Showing Docker container logs (API server logs not available)\n'));
+  console.log(chalk.gray('Showing Docker container logs (API server logs: claude-phone logs api-server)\n'));
 
   const child = spawn('docker', [
     'compose',
