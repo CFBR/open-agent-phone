@@ -4,6 +4,44 @@ import path from 'path';
 import { getPidPath, getConfigDir } from './config.js';
 
 /**
+ * Build the environment for claude-api-server from the saved CLI config.
+ * Without this the detached server only sees the shell environment, so every
+ * provider selected in `claude-phone setup` is ignored.
+ * @param {object} config - Saved configuration
+ * @returns {object} Environment variables to merge into process.env
+ */
+export function buildApiServerEnv(config = {}) {
+  const api = config.api || {};
+  const server = config.server || {};
+  const env = {
+    AI_BACKEND: api.aiBackend || 'ollama',
+    OLLAMA_URL: api.ollamaUrl || 'http://127.0.0.1:11434',
+    OLLAMA_MODEL: api.ollamaModel || 'llama3.2:3b',
+  };
+
+  if (api.maxHistoryMessages) env.MAX_HISTORY_MESSAGES = String(api.maxHistoryMessages);
+
+  if (api.openai?.apiKey) env.OPENAI_API_KEY = api.openai.apiKey;
+  if (api.openai?.model) env.OPENAI_MODEL = api.openai.model;
+  if (api.openrouter?.apiKey) env.OPENROUTER_API_KEY = api.openrouter.apiKey;
+  if (api.openrouterModel) env.OPENROUTER_MODEL = api.openrouterModel;
+  if (api.customAiUrl) env.AI_BACKEND_URL = api.customAiUrl;
+  if (api.customAiKey) env.AI_API_KEY = api.customAiKey;
+  if (api.customAiModel) env.AI_MODEL = api.customAiModel;
+  if (server.claudeApiToken) env.CLAUDE_API_TOKEN = server.claudeApiToken;
+
+  return env;
+}
+
+/**
+ * Path to the detached claude-api-server log file.
+ * @returns {string}
+ */
+export function getApiServerLogPath() {
+  return path.join(getConfigDir(), 'logs', 'api-server.log');
+}
+
+/**
  * Get the server PID from the PID file
  * @param {string} [pidPath] - Optional PID file path (for testing)
  * @returns {number|null} PID or null if not found
@@ -58,9 +96,10 @@ export async function isServerRunning(pidPath = null) {
  * @param {string} serverPath - Path to claude-api-server directory
  * @param {number} port - Port to listen on
  * @param {string} [pidPath] - Optional PID file path (for testing)
+ * @param {object} [extraEnv] - Extra environment variables (from config)
  * @returns {Promise<number>} Process PID
  */
-export async function startServer(serverPath, port, pidPath = null) {
+export async function startServer(serverPath, port, pidPath = null, extraEnv = {}) {
   pidPath = pidPath || getPidPath();
 
   // Check if already running
@@ -70,16 +109,25 @@ export async function startServer(serverPath, port, pidPath = null) {
   }
 
   return new Promise((resolve, reject) => {
-    // Spawn detached process
+    const logDir = path.dirname(getApiServerLogPath());
+    fs.mkdirSync(logDir, { recursive: true, mode: 0o700 });
+    const logFd = fs.openSync(getApiServerLogPath(), 'a');
+
+    // Spawn detached process, redirecting its output to a log file so
+    // `claude-phone logs api-server` has something to read.
     const child = spawn('node', ['server.js'], {
       cwd: serverPath,
       detached: true,
-      stdio: 'ignore',
+      stdio: ['ignore', logFd, logFd],
       env: {
         ...process.env,
+        ...extraEnv,
         PORT: port
       }
     });
+
+    // The child holds its own descriptor; the parent can close this one.
+    fs.closeSync(logFd);
 
     // Don't wait for child process
     child.unref();
