@@ -1,6 +1,65 @@
 const { EventEmitter } = require('node:events');
+const crypto = require('node:crypto');
 const WebSocket = require('ws');
 const { pcmStats } = require('./pcm-stats');
+
+const DEFAULT_TOKEN_TTL_MS = parseInt(process.env.AUDIO_FORK_TOKEN_TTL_MS, 10) || 60000;
+const PROCESS_TOKEN_SECRET = process.env.AUDIO_FORK_SECRET
+  || crypto.randomBytes(32).toString('hex');
+
+function signForkToken(callUuid, expiresAt, secret) {
+  return crypto
+    .createHmac('sha256', secret)
+    .update(`${callUuid}.${expiresAt}`)
+    .digest('hex');
+}
+
+/**
+ * Create a short-lived token for the audio fork URL.
+ * @param {string} callUuid
+ * @param {Object} [options]
+ * @param {number} [options.ttlMs]
+ * @param {number} [options.now]
+ * @param {string} [options.secret]
+ * @returns {string}
+ */
+function createAudioForkToken(callUuid, {
+  ttlMs = DEFAULT_TOKEN_TTL_MS,
+  now = Date.now(),
+  secret = PROCESS_TOKEN_SECRET,
+} = {}) {
+  const expiresAt = now + ttlMs;
+  return `${expiresAt}.${signForkToken(callUuid, expiresAt, secret)}`;
+}
+
+/**
+ * Verify a token created by createAudioForkToken.
+ * @param {string} callUuid
+ * @param {string} token
+ * @param {Object} [options]
+ * @param {number} [options.now]
+ * @param {string} [options.secret]
+ * @returns {boolean}
+ */
+function verifyAudioForkToken(callUuid, token, {
+  now = Date.now(),
+  secret = PROCESS_TOKEN_SECRET,
+} = {}) {
+  if (!callUuid || !token || typeof token !== 'string') return false;
+
+  const dot = token.indexOf('.');
+  if (dot <= 0) return false;
+
+  const expiresAt = Number(token.slice(0, dot));
+  const signature = token.slice(dot + 1);
+  if (!Number.isFinite(expiresAt) || expiresAt < now) return false;
+
+  const expected = signForkToken(callUuid, expiresAt, secret);
+  const actualBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (actualBuffer.length !== expectedBuffer.length) return false;
+  return crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
 
 
 class AudioForkSession extends EventEmitter {
@@ -289,13 +348,42 @@ class AudioForkSession extends EventEmitter {
 }
 
 class AudioForkServer extends EventEmitter {
-  constructor({ port = 3001, host = '0.0.0.0' } = {}) {
+  constructor({
+    port = 3001,
+    host = '0.0.0.0',
+    tokenTtlMs = DEFAULT_TOKEN_TTL_MS,
+    tokenSecret = PROCESS_TOKEN_SECRET
+  } = {}) {
     super();
     this.port = port;
     this.host = host;
+    this.tokenTtlMs = tokenTtlMs;
+    this.tokenSecret = tokenSecret;
     this.wss = null;
     this._pending = [];
     this._sessions = new Map();
+  }
+
+  /**
+   * Build the WebSocket URL used by FreeSWITCH for a call.
+   * @param {string} callUuid
+   * @param {number} wsPort
+   * @returns {string}
+   */
+  buildForkUrl(callUuid, wsPort = this.port) {
+    const token = this.createToken(callUuid);
+    return `ws://127.0.0.1:${wsPort}/${encodeURIComponent(callUuid)}?token=${encodeURIComponent(token)}`;
+  }
+
+  createToken(callUuid) {
+    return createAudioForkToken(callUuid, {
+      ttlMs: this.tokenTtlMs,
+      secret: this.tokenSecret
+    });
+  }
+
+  verifyToken(callUuid, token) {
+    return verifyAudioForkToken(callUuid, token, { secret: this.tokenSecret });
   }
 
   start() {
@@ -306,49 +394,35 @@ class AudioForkServer extends EventEmitter {
       const url = (req && req.url) || '/';
       console.log('[AUDIO-DEBUG] WebSocket connection received, URL: ' + url);
 
-      const path = url.split('?')[0] || '/';
-      const candidate = decodeURIComponent(path).replace(/^\/+/, '').trim();
-
-      const callUuidFromUrl = candidate.length ? candidate.split('/')[0] : '';
-      const callUuid = callUuidFromUrl || null;
+      const parsed = new URL(url, 'http://localhost');
+      const candidate = decodeURIComponent(parsed.pathname).replace(/^\/+/, '').trim();
+      const callUuid = candidate.length ? candidate.split('/')[0] : null;
+      const token = parsed.searchParams.get('token');
 
       console.log('[AUDIO-DEBUG] Extracted callUuid from URL: ' + callUuid);
 
-      if (callUuid) {
-        const idx = this._pending.findIndex((p) => p.callUuid === callUuid);
-        const pending = idx >= 0 ? this._pending.splice(idx, 1)[0] : null;
-        if (pending) {
-          clearTimeout(pending.timeout);
-          console.log('[AUDIO-DEBUG] Found pending expectation for ' + callUuid);
-        } else {
-          console.log('[AUDIO-DEBUG] No pending expectation for ' + callUuid + ', creating session anyway');
-        }
-
-        const session = new AudioForkSession({ ws, callUuid });
-        this._sessions.set(callUuid, session);
-        session.on('close', () => this._sessions.delete(callUuid));
-        session.on('error', () => this._sessions.delete(callUuid));
-
-        this.emit('session', session);
-        if (pending) pending.resolve(session);
+      if (!callUuid || !this.verifyToken(callUuid, token)) {
+        console.log('[AUDIO-DEBUG] Rejecting audio fork connection with missing or invalid token');
+        ws.close(1008, 'Invalid audio token');
         return;
       }
 
-      const pending = this._pending.shift();
-      if (!pending) {
-        console.log('[AUDIO-DEBUG] No pending session and no callUuid in URL, closing connection');
-        ws.close(1011, 'No pending audio session');
-        return;
+      const idx = this._pending.findIndex((p) => p.callUuid === callUuid);
+      const pending = idx >= 0 ? this._pending.splice(idx, 1)[0] : null;
+      if (pending) {
+        clearTimeout(pending.timeout);
+        console.log('[AUDIO-DEBUG] Found pending expectation for ' + callUuid);
+      } else {
+        console.log('[AUDIO-DEBUG] No pending expectation for ' + callUuid + ', creating session anyway');
       }
 
-      clearTimeout(pending.timeout);
-      const session = new AudioForkSession({ ws, callUuid: pending.callUuid });
-      this._sessions.set(pending.callUuid, session);
-      session.on('close', () => this._sessions.delete(pending.callUuid));
-      session.on('error', () => this._sessions.delete(pending.callUuid));
+      const session = new AudioForkSession({ ws, callUuid });
+      this._sessions.set(callUuid, session);
+      session.on('close', () => this._sessions.delete(callUuid));
+      session.on('error', () => this._sessions.delete(callUuid));
 
       this.emit('session', session);
-      pending.resolve(session);
+      if (pending) pending.resolve(session);
     });
 
     this.wss.on('listening', () => {
@@ -418,4 +492,9 @@ class AudioForkServer extends EventEmitter {
   }
 }
 
-module.exports = { AudioForkServer, AudioForkSession };
+module.exports = {
+  AudioForkServer,
+  AudioForkSession,
+  createAudioForkToken,
+  verifyAudioForkToken,
+};
