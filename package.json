@@ -1,13 +1,13 @@
 {
   "name": "claude-phone",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Voice interface for any AI agent via SIP/3CX — open-source first, self-hosted",
   "private": true,
   "scripts": {
     "test": "npm run test:cli && npm run test:api-server && npm run test:voice-app",
     "test:cli": "cd cli && npm test",
     "test:api-server": "cd claude-api-server && npm test",
-    "test:voice-app": "cd voice-app && node --test test/**/*.test.js",
+    "test:voice-app": "cd voice-app && node --test test/*.test.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "lint:voice-app": "eslint voice-app/",
