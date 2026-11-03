@@ -10,7 +10,7 @@ This specification defines the contract for the `POST /api/query` endpoint in th
 The primary goal is to retrieve **Structured JSON** responses from the LLM to drive conditional logic in automation flows.
 
 ## 2. Base Configuration
-- **Host:** `http://10.70.7.81:3000` (Sippycup)
+- **Host:** `http://localhost:3000`
 - **Content-Type:** `application/json`
 - **Auth:** Internal Network Only (No token required for MVP)
 
@@ -151,7 +151,7 @@ If the LLM returns text with markdown ticks (e.g., \`\`\`json ... \`\`\`), the `
 ### 6.1 HTTP Request Node Configuration
 
 - **Method:** POST
-- **URL:** `http://10.70.7.81:3000/api/query`
+- **URL:** `http://localhost:3000/api/query`
 - **Body Parameters:**
   ```json
   {
