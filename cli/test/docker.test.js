@@ -279,4 +279,42 @@ test('docker compose generation', async (t) => {
     assert.ok(!envFile.includes('CLAUDE_API_URL=http://localhost:'),
       'voice-server mode should NOT use localhost when apiServerIp is set');
   });
+
+  await t.test('includes optional Kokoro and local STT services from provider config', () => {
+    const config = {
+      server: {
+        externalIp: '192.168.1.50',
+        httpPort: 3000,
+        claudeApiPort: 3333
+      },
+      sip: {
+        domain: '3cx.local',
+        registrar: '192.168.1.10'
+      },
+      devices: [],
+      api: {
+        ttsProvider: 'kokoro',
+        sttProvider: 'local',
+        whisperModel: 'Systran/faster-whisper-base'
+      },
+      paths: {
+        voiceApp: '/app/voice-app'
+      },
+      secrets: {
+        drachtio: 'drachtio-secret',
+        freeswitch: 'fs-secret'
+      },
+      deployment: { mode: 'both' }
+    };
+
+    const compose = generateDockerCompose(config);
+    assert.ok(compose.includes('kokoro-tts'), 'should include Kokoro when ttsProvider is kokoro');
+    assert.ok(compose.includes('faster-whisper'), 'should include local STT when sttProvider is local');
+    assert.ok(compose.includes('speaches'), 'should use the pinned Speaches image');
+    assert.ok(compose.includes('whisper-data:'), 'should declare the whisper cache volume');
+
+    const envFile = generateEnvFile(config);
+    assert.ok(envFile.includes('STT_PROVIDER=local'), 'should write STT_PROVIDER=local');
+    assert.ok(envFile.includes('WHISPER_MODEL=Systran/faster-whisper-base'), 'should write the Whisper model');
+  });
 });
