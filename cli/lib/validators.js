@@ -129,6 +129,77 @@ export async function validateKokoro(url) {
 }
 
 /**
+ * Validate an OpenAI-compatible TTS endpoint by requesting a short sample.
+ * @param {object} options
+ * @param {string} options.baseUrl
+ * @param {string} [options.apiKey]
+ * @param {string} options.model
+ * @param {string} [options.voice]
+ * @param {string} [options.format]
+ * @returns {Promise<{valid: boolean, error?: string}>}
+ */
+export async function validateOpenAITts({
+  baseUrl,
+  apiKey = '',
+  model,
+  voice = 'alloy',
+  format = 'mp3'
+}) {
+  if (!baseUrl || !baseUrl.trim()) {
+    return { valid: false, error: 'Base URL is required' };
+  }
+  if (!model || !model.trim()) {
+    return { valid: false, error: 'Model is required' };
+  }
+
+  const url = `${baseUrl.replace(/\/+$/, '')}/audio/speech`;
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  try {
+    const response = await axios.post(
+      url,
+      {
+        model,
+        input: 'test',
+        voice,
+        response_format: format === 'wav' ? 'wav' : 'mp3'
+      },
+      {
+        headers,
+        timeout: 15000,
+        responseType: 'arraybuffer'
+      }
+    );
+
+    if (response.status === 200 && response.data) {
+      return { valid: true };
+    }
+    return { valid: false, error: `Unexpected status: ${response.status}` };
+  } catch (error) {
+    if (error.response) {
+      if (error.response.status === 401 || error.response.status === 403) {
+        return { valid: false, error: 'Authentication failed, check the TTS API key' };
+      }
+      if (error.response.status === 404) {
+        return { valid: false, error: 'TTS endpoint or model not found, check the base URL and model' };
+      }
+      return {
+        valid: false,
+        error: `API error: ${error.response.status} ${error.response.statusText}`
+      };
+    }
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      return { valid: false, error: 'Connection timeout' };
+    }
+    if (error.code === 'ECONNREFUSED') {
+      return { valid: false, error: 'Connection refused, TTS server not running' };
+    }
+    return { valid: false, error: `Network error: ${error.message}` };
+  }
+}
+
+/**
  * Validate OpenAI-compatible API server connectivity
  * @param {string} url - API base URL
  * @param {string} apiKey - API key (optional)

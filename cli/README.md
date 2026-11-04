@@ -34,7 +34,7 @@ Select this when setting up a Raspberry Pi or dedicated voice box that connects 
 **What it asks for:**
 1. 3CX SIP domain and registrar
 2. API server IP and port (where claude-api-server runs)
-3. ElevenLabs API key and default voice ID (or skip for local Kokoro TTS)
+3. TTS provider settings (Kokoro, ElevenLabs, or an OpenAI-compatible endpoint)
 4. OpenRouter API key (for Whisper STT)
 5. Device configuration (name, extension, auth, voice, prompt)
 6. Server LAN IP (for RTP audio routing)
@@ -60,7 +60,7 @@ Select this when setting up the Claude API wrapper on a machine with Claude Code
 Select this for a single machine running everything.
 
 **What it asks for:**
-1. ElevenLabs API key and default voice ID (or skip for local Kokoro TTS)
+1. TTS provider settings (Kokoro, ElevenLabs, or an OpenAI-compatible endpoint)
 2. OpenRouter API key
 3. 3CX SIP domain and registrar
 4. Device configuration
