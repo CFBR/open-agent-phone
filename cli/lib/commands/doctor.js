@@ -5,7 +5,7 @@ import axios from 'axios';
 import { loadConfig, configExists, getInstallationType } from '../config.js';
 import { checkDocker, getContainerStatus } from '../docker.js';
 import { isServerRunning, getServerPid } from '../process-manager.js';
-import { validateElevenLabsKey, validateOpenRouterKey, validateKokoro } from '../validators.js';
+import { validateElevenLabsKey, validateOpenRouterKey, validateKokoro, validateOpenAITts } from '../validators.js';
 import { isReachable, checkClaudeApiServer as checkClaudeApiHealth } from '../network.js';
 import { checkPort } from '../port-check.js';
 
@@ -346,6 +346,26 @@ async function runVoiceServerChecks(config, isPiSplit) {
       console.log(chalk.gray('  → Start the kokoro-tts container or switch TTS_PROVIDER\n'));
     }
     checks.push({ name: 'Kokoro TTS', passed: kokoroResult.valid });
+  }
+
+  // Check OpenAI-compatible TTS providers (OpenAI, OpenRouter, Nano-GPT, custom)
+  if (['openai', 'openrouter', 'nanogpt', 'custom'].includes(config.api?.ttsProvider)) {
+    const ttsSpinner = ora(`Checking ${config.api.ttsProvider} TTS...`).start();
+    const ttsResult = await validateOpenAITts({
+      baseUrl: config.api.ttsBaseUrl,
+      apiKey: config.api.ttsApiKey,
+      model: config.api.ttsModel,
+      voice: config.api.ttsVoice,
+      format: config.api.ttsFormat
+    });
+    if (ttsResult.valid) {
+      ttsSpinner.succeed(chalk.green(`${config.api.ttsProvider} TTS endpoint connected`));
+      passedCount++;
+    } else {
+      ttsSpinner.fail(chalk.red(`${config.api.ttsProvider} TTS failed: ${ttsResult.error}`));
+      console.log(chalk.gray('  → Check TTS_BASE_URL, TTS_MODEL, and TTS_API_KEY\n'));
+    }
+    checks.push({ name: `${config.api.ttsProvider} TTS`, passed: ttsResult.valid });
   }
 
   // Check Voice-app container

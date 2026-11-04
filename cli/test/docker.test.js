@@ -361,4 +361,46 @@ test('docker compose generation', async (t) => {
     assert.deepStrictEqual(parseComposePsOutput(''), []);
     assert.deepStrictEqual(parseDockerPsOutput(''), []);
   });
+
+  await t.test('writes OpenAI-compatible TTS settings and skips Kokoro', () => {
+    const config = {
+      server: {
+        externalIp: '192.168.1.50',
+        httpPort: 3000,
+        claudeApiPort: 3333
+      },
+      sip: {
+        domain: '3cx.local',
+        registrar: '192.168.1.10'
+      },
+      devices: [],
+      api: {
+        ttsProvider: 'openrouter',
+        ttsBaseUrl: 'https://openrouter.ai/api/v1',
+        ttsApiKey: 'tts-key',
+        ttsModel: 'tts-model',
+        ttsVoice: 'alloy',
+        ttsFormat: 'mp3'
+      },
+      paths: {
+        voiceApp: '/app/voice-app'
+      },
+      secrets: {
+        drachtio: 'drachtio-secret',
+        freeswitch: 'fs-secret'
+      },
+      deployment: { mode: 'both' }
+    };
+
+    const envFile = generateEnvFile(config);
+    assert.ok(envFile.includes('TTS_PROVIDER=openrouter'));
+    assert.ok(envFile.includes('TTS_BASE_URL=https://openrouter.ai/api/v1'));
+    assert.ok(envFile.includes('TTS_API_KEY=tts-key'));
+    assert.ok(envFile.includes('TTS_MODEL=tts-model'));
+    assert.ok(envFile.includes('TTS_VOICE=alloy'));
+    assert.ok(envFile.includes('TTS_FORMAT=mp3'));
+
+    const compose = generateDockerCompose(config);
+    assert.ok(!compose.includes('kokoro-tts'), 'should not include Kokoro for a cloud TTS provider');
+  });
 });
