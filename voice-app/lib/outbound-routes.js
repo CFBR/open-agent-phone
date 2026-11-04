@@ -7,9 +7,9 @@
 
 const express = require('express');
 const router = express.Router();
-const { URL } = require('url');
 const logger = require('./logger');
 const metrics = require('./metrics');
+const { validateWebhookUrl } = require('./url-safety');
 const { OutboundSession, getSession, getAllSessions } = require('./outbound-session');
 const { initiateOutboundCall, playMessage, hangupCall } = require('./outbound-handler');
 const { runConversationLoop } = require('./conversation-loop');
@@ -81,20 +81,14 @@ function validateRequest(body) {
     }
   }
 
-  // Optional: webhook URL. Validate it here so a malformed or non-HTTP value
-  // cannot reach fetch() later.
+  // Optional: webhook URL. Validate it here so malformed, non-HTTP, or private
+  // targets cannot reach fetch() later.
   if (body.webhookUrl !== undefined) {
-    if (typeof body.webhookUrl !== 'string' || body.webhookUrl.trim() === '') {
-      return { valid: false, error: 'Field "webhookUrl" must be a non-empty string' };
-    }
-    let parsed;
-    try {
-      parsed = new URL(body.webhookUrl);
-    } catch {
-      return { valid: false, error: 'Field "webhookUrl" must be a valid URL' };
-    }
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return { valid: false, error: 'Field "webhookUrl" must use http or https' };
+    const result = validateWebhookUrl(body.webhookUrl, {
+      allowPrivate: process.env.ALLOW_PRIVATE_WEBHOOKS === '1'
+    });
+    if (!result.ok) {
+      return { valid: false, error: `Field "webhookUrl" ${result.error}` };
     }
   }
 

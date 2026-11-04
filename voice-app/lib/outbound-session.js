@@ -9,6 +9,7 @@
 const { EventEmitter } = require('events');
 const { randomUUID } = require('crypto');
 const logger = require('./logger');
+const { assertSafeWebhookUrl } = require('./url-safety');
 
 // Active session tracking
 const activeSessions = new Map(); // callId -> OutboundSession
@@ -120,6 +121,17 @@ class OutboundSession extends EventEmitter {
     }
 
     try {
+      const safety = await assertSafeWebhookUrl(this.webhookUrl, {
+        allowPrivate: process.env.ALLOW_PRIVATE_WEBHOOKS === '1'
+      });
+      if (!safety.ok) {
+        logger.warn('Webhook rejected by URL safety check', {
+          callId: this.callId,
+          error: safety.error
+        });
+        return;
+      }
+
       const payload = {
         callId: this.callId,
         timestamp: new Date().toISOString(),

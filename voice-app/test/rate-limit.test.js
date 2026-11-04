@@ -5,7 +5,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { createRateLimiter } = require('../lib/rate-limit');
+const { createRateLimiter, createClientKeyGenerator } = require('../lib/rate-limit');
 
 function createRes() {
   return {
@@ -68,4 +68,27 @@ test('reset clears all buckets', () => {
   limiter.reset();
   limiter({ ip: '10.0.0.1' }, createRes(), () => { nextCalls++; });
   assert.strictEqual(nextCalls, 2);
+});
+
+test('client key prefers a hashed token and falls back to IP', () => {
+  const keyFor = createClientKeyGenerator();
+
+  const tokenKey = keyFor({
+    get: (header) => (header === 'X-API-Token' ? 'super-secret' : undefined),
+    ip: '10.0.0.1'
+  });
+  assert.match(tokenKey, /^token:/);
+  assert.ok(!tokenKey.includes('super-secret'));
+
+  assert.strictEqual(keyFor({ get: () => undefined, ip: '10.0.0.1' }), 'ip:10.0.0.1');
+});
+
+test('same token from different IPs uses the same key', () => {
+  const keyFor = createClientKeyGenerator();
+  const makeReq = (ip) => ({
+    get: (header) => (header === 'Authorization' ? 'Bearer same-token' : undefined),
+    ip
+  });
+
+  assert.strictEqual(keyFor(makeReq('10.0.0.1')), keyFor(makeReq('10.0.0.2')));
 });

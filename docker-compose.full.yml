@@ -168,6 +168,7 @@ services:
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
       OPENCODE_MODEL: ${OPENCODE_MODEL:-}
       OPENCODE_AUTO_APPROVE: ${OPENCODE_AUTO_APPROVE:-0}
+      CLAUDE_DANGEROUS_PERMISSIONS: ${CLAUDE_DANGEROUS_PERMISSIONS:-0}
     volumes:
       # Claude CLI auth (only needed if AI_BACKEND=claude)
       - ${HOME:-/root}/.claude:/root/.claude:ro
