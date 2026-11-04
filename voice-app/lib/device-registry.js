@@ -30,6 +30,7 @@ const MORPHEUS_DEFAULT = {
   password: '',
   elevenlabsVoiceId: 'JAgnJveGGUh4qy4kh6dF',
   kokoroVoiceId: 'af_heart',
+  ttsVoiceId: process.env.TTS_VOICE || 'alloy',
   voiceId: 'JAgnJveGGUh4qy4kh6dF', // legacy fallback
   prompt: 'You are Morpheus, the principal AI assistant. You are meticulous, systematic, and excellence-driven. Keep voice responses under 40 words.'
 };
@@ -44,7 +45,12 @@ function getVoiceIdForDevice(device) {
   if (ttsProvider === 'kokoro') {
     return device.kokoroVoiceId || device.voiceId || 'af_heart';
   }
-  return device.elevenlabsVoiceId || device.voiceId || 'JAgnJveGGUh4qy4kh6dF';
+  if (ttsProvider === 'elevenlabs') {
+    return device.elevenlabsVoiceId || device.voiceId || 'JAgnJveGGUh4qy4kh6dF';
+  }
+  // OpenAI-compatible providers (openai, openrouter, nanogpt, custom).
+  // Do not fall back to the legacy ElevenLabs voice ID here.
+  return device.ttsVoiceId || process.env.TTS_VOICE || 'alloy';
 }
 
 class DeviceRegistry {

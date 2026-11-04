@@ -166,36 +166,46 @@ claude-phone api-server    # Starts API wrapper on port 3333
 
 ## TTS Providers
 
-Two text-to-speech engines are available, controlled by the `TTS_PROVIDER` env var:
+TTS is selected with `TTS_PROVIDER`:
 
-### ElevenLabs (cloud, premium quality)
+| Provider | Value | Notes |
+|----------|-------|-------|
+| ElevenLabs | `elevenlabs` | Cloud, premium quality, per-character billing |
+| Kokoro-82M | `kokoro` | Local, free, Apache 2.0, runs on CPU |
+| OpenAI | `openai` | OpenAI-compatible `/audio/speech` endpoint |
+| OpenRouter | `openrouter` | Uses `OPENROUTER_API_KEY` and `TTS_MODEL` |
+| Nano-GPT | `nanogpt` | Uses `NANOGPT_API_KEY` and `TTS_MODEL` |
+| Custom | `custom` | Any other OpenAI-compatible `/audio/speech` endpoint |
 
-| Setting | Value |
-|---------|-------|
-| `TTS_PROVIDER` | `elevenlabs` |
-| Required | `ELEVENLABS_API_KEY` |
-| Quality | Highest naturalness |
-| Cost | Per-character billing |
-| Latency | ~300-500ms |
+### OpenAI-compatible providers
 
-### Kokoro-82M (local, free, open-source, runs on CPU)
+OpenAI, OpenRouter, Nano-GPT, and custom gateways share one request path. Set:
+
+```bash
+TTS_PROVIDER=openrouter
+TTS_BASE_URL=https://openrouter.ai/api/v1
+TTS_API_KEY=your-key
+TTS_MODEL=your-tts-model
+TTS_VOICE=alloy
+TTS_FORMAT=mp3
+```
+
+The app posts to `{TTS_BASE_URL}/audio/speech`. If the provider has no voices endpoint, set `TTS_VOICES` to a comma-separated list. OpenRouter and Nano-GPT TTS availability depends on the models they expose, so point `TTS_BASE_URL` at any compatible gateway when needed.
+
+### Kokoro-82M
 
 | Setting | Value |
 |---------|-------|
 | `TTS_PROVIDER` | `kokoro` |
 | Required | `KOKORO_TTS_URL` (default: `http://127.0.0.1:8880`) |
 | License | Apache 2.0 |
-| Quality | #2 in TTS Arena — close to ElevenLabs |
-| Cost | **$0** — runs on your hardware |
+| Quality | #2 in TTS Arena, close to ElevenLabs |
+| Cost | **$0**, runs on your hardware |
 | RAM | ~2-3GB on CPU (Docker container) |
 | Latency | ~1-3s on CPU |
 | Voices | 16 presets across US/UK English, male/female |
 
-**To switch, either:**
-- Set `TTS_PROVIDER=kokoro` in your `.env`
-- Uncomment the `kokoro-tts` service in your `docker-compose.yml`
-
-Kokoro uses the OpenAI-compatible `/v1/audio/speech` endpoint — the same format any OpenAI-compatible TTS service would use.
+Kokoro uses the OpenAI-compatible `/v1/audio/speech` endpoint, the same format any OpenAI-compatible TTS service would use.
 
 ## Speech-to-Text
 

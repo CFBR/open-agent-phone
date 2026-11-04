@@ -44,8 +44,14 @@ export async function configShowCommand() {
   console.log(chalk.gray(`  ElevenLabs API Key: ${redactValue(config.api?.elevenlabs?.apiKey)}`));
 
   // Providers
+  const ttsProvider = config.api?.ttsProvider || 'elevenlabs';
   console.log(chalk.bold('\nProviders:'));
-  console.log(chalk.gray(`  TTS: ${config.api?.ttsProvider || 'elevenlabs'}`));
+  console.log(chalk.gray(`  TTS: ${ttsProvider}`));
+  if (['openai', 'openrouter', 'nanogpt', 'custom'].includes(ttsProvider)) {
+    console.log(chalk.gray(`  TTS Base URL: ${config.api.ttsBaseUrl || '[not set]'}`));
+    console.log(chalk.gray(`  TTS Model: ${config.api.ttsModel || '[not set]'}`));
+    console.log(chalk.gray(`  TTS Voice: ${config.api.ttsVoice || '[not set]'}`));
+  }
   console.log(chalk.gray(`  STT: ${config.api?.sttProvider || 'openrouter'}`));
   console.log(chalk.gray(`  AI backend: ${config.api?.aiBackend || 'ollama'}`));
 
