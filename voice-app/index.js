@@ -19,7 +19,9 @@ var whisperClient = require("./lib/whisper-client");
 var claudeBridge = require("./lib/claude-bridge");
 var ttsService = require("./lib/tts-service");
 var metrics = require("./lib/metrics");
-var createRateLimiter = require("./lib/rate-limit").createRateLimiter;
+var rateLimit = require("./lib/rate-limit");
+var createRateLimiter = rateLimit.createRateLimiter;
+var createClientKeyGenerator = rateLimit.createClientKeyGenerator;
 
 // Multi-extension support
 var deviceRegistry = require("./lib/device-registry");
@@ -384,12 +386,16 @@ function initializeServers() {
   // accepting uploads from the whole network lets anyone fill the disk.
   httpServer.app.use("/audio", apiAuth);
 
-  // Per-client rate limits for the expensive endpoints.
+  // Per-client rate limits for the expensive endpoints. Prefer the API token
+  // fingerprint over the IP so rotating addresses does not reset the bucket.
+  var clientKey = createClientKeyGenerator();
   var outboundLimiter = createRateLimiter({
-    max: parseInt(process.env.OUTBOUND_RATE_LIMIT, 10) || 5
+    max: parseInt(process.env.OUTBOUND_RATE_LIMIT, 10) || 5,
+    keyGenerator: clientKey
   });
   var queryLimiter = createRateLimiter({
-    max: parseInt(process.env.QUERY_RATE_LIMIT, 10) || 30
+    max: parseInt(process.env.QUERY_RATE_LIMIT, 10) || 30,
+    keyGenerator: clientKey
   });
   httpServer.app.use("/api/outbound-call", outboundLimiter);
   httpServer.app.use("/api/query", queryLimiter);

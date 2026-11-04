@@ -342,12 +342,12 @@ See [Outbound API Reference](voice-app/README-OUTBOUND.md) for details.
 
 ### API Authentication (optional)
 
-Both APIs support an optional shared secret. Set `VOICE_API_TOKEN` for the voice-app and `CLAUDE_API_TOKEN` for the AI backend. When set, requests must present the token:
+Both APIs support an optional shared secret. Set `VOICE_API_TOKEN` for the voice app and `AI_API_TOKEN` for the AI backend. When set, requests must present the token:
 
-- Voice-app `/api/*`: `X-API-Token` header or `Authorization: Bearer <token>`
-- Claude API `/ask`, `/ask-structured`, `/end-session`: same headers
+- Voice-app `/api/*` and `/audio`: `X-API-Token` header or `Authorization: Bearer <token>`
+- AI backend `/ask`, `/ask-structured`, `/end-session`: same headers
 
-`claude-api-server` binds to `127.0.0.1` by default. Set `CLAUDE_API_HOST=0.0.0.0` only for a remote voice server, and set `CLAUDE_API_TOKEN` at the same time.
+The AI backend binds to `127.0.0.1` by default. Set `AI_API_HOST=0.0.0.0` only for a remote voice server, and set `AI_API_TOKEN` at the same time. The older `CLAUDE_API_TOKEN` and `CLAUDE_API_HOST` names still work.
 
 ```bash
 curl -H "Authorization: Bearer $VOICE_API_TOKEN" http://localhost:3000/api/devices
@@ -449,6 +449,7 @@ Both the voice-app and claude-api-server ship with test suites (`node --test`). 
 - [Outbound API](voice-app/README-OUTBOUND.md) — Outbound calling API reference
 - [Deployment](voice-app/DEPLOYMENT.md) — Production deployment guide
 - [API Query Contract](voice-app/API-QUERY-CONTRACT.md) — Protocol between voice-app and AI backend
+- [Security](docs/SECURITY.md) — Tokens, webhooks, permissions, and rotation
 - [Claude Code Skill](docs/CLAUDE-CODE-SKILL.md) — Build a "call me" skill
 
 ## Credits

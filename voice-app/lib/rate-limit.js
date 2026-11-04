@@ -4,6 +4,29 @@
  * Kept dependency-free and testable by accepting a clock through options.
  */
 
+const crypto = require('node:crypto');
+
+function tokenFingerprint(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex').slice(0, 32);
+}
+
+/**
+ * Prefer a hashed API token over the client IP so one user cannot bypass a
+ * limit by rotating addresses, and users behind a shared proxy are separated.
+ * @returns {Function} keyGenerator(req)
+ */
+function createClientKeyGenerator() {
+  return function clientKey(req) {
+    const token = req.get
+      ? (req.get('X-API-Token') || (req.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim())
+      : '';
+    if (token) return `token:${tokenFingerprint(token)}`;
+
+    const ip = req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
+    return `ip:${ip}`;
+  };
+}
+
 function createRateLimiter({
   windowMs = 60000,
   max = 30,
@@ -55,4 +78,4 @@ function createRateLimiter({
   return middleware;
 }
 
-module.exports = { createRateLimiter };
+module.exports = { createRateLimiter, createClientKeyGenerator, tokenFingerprint };

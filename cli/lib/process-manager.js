@@ -27,6 +27,7 @@ export function buildApiServerEnv(config = {}) {
   if (api.openrouterModel) env.OPENROUTER_MODEL = api.openrouterModel;
   if (api.opencodeModel) env.OPENCODE_MODEL = api.opencodeModel;
   env.OPENCODE_AUTO_APPROVE = api.opencodeAutoApprove ? '1' : '0';
+  env.CLAUDE_DANGEROUS_PERMISSIONS = api.claudeDangerousPermissions ? '1' : '0';
   if (api.customAiUrl) env.AI_BACKEND_URL = api.customAiUrl;
   if (api.customAiKey) env.AI_API_KEY = api.customAiKey;
   if (api.customAiModel) env.AI_MODEL = api.customAiModel;

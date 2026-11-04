@@ -316,6 +316,7 @@ export function generateEnvFile(config) {
     `OUTBOUND_RATE_LIMIT=${config.api?.outboundRateLimit || 5}`,
     `QUERY_RATE_LIMIT=${config.api?.queryRateLimit || 30}`,
     `METRICS_TOKEN=${config.api?.metricsToken || ''}`,
+    `ALLOW_PRIVATE_WEBHOOKS=${config.api?.allowPrivateWebhooks ? '1' : '0'}`,
     '',
     '# Outbound Call Settings',
     `MAX_CONVERSATION_TURNS=${config.api?.maxConversationTurns || 20}`,

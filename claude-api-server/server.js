@@ -34,6 +34,7 @@ const {
   parseOpenCodeStdout,
   sessionIdForCall,
 } = require('./opencode');
+const { buildClaudeArgs } = require('./claude-args');
 
 const app = express();
 const PORT = process.env.PORT || 3333;
@@ -146,6 +147,7 @@ const AI_TIMEOUT_MS = parseInt(process.env.AI_TIMEOUT_MS, 10)
 const MAX_HISTORY_MESSAGES = parseInt(process.env.MAX_HISTORY_MESSAGES, 10) || 40;
 const OPENCODE_MODEL = process.env.OPENCODE_MODEL || process.env.AI_MODEL || '';
 const OPENCODE_AUTO_APPROVE = process.env.OPENCODE_AUTO_APPROVE === '1';
+const CLAUDE_DANGEROUS_PERMISSIONS = process.env.CLAUDE_DANGEROUS_PERMISSIONS === '1';
 
 function getActiveModelLabel() {
   switch (AI_BACKEND) {
@@ -177,7 +179,11 @@ const AI_BACKEND_URL = process.env.AI_BACKEND_URL || '';
 
 console.log(`[STARTUP] AI backend: ${AI_BACKEND}`);
 if (AI_BACKEND === 'claude') {
-  console.warn('[STARTUP] Claude backend runs with --dangerously-skip-permissions. Keep this server behind AI_API_TOKEN and a trusted network.');
+  if (CLAUDE_DANGEROUS_PERMISSIONS) {
+    console.warn('[STARTUP] Claude backend runs with --dangerously-skip-permissions. Keep this server behind AI_API_TOKEN and a trusted network.');
+  } else {
+    console.log('[STARTUP] Claude backend uses normal permission checks. Set CLAUDE_DANGEROUS_PERMISSIONS=1 only for trusted headless use.');
+  }
 }
 if (AI_BACKEND === 'ollama') {
   console.log(`[STARTUP] Ollama URL: ${OLLAMA_URL}, model: ${OLLAMA_MODEL}`);
@@ -220,19 +226,20 @@ function parseClaudeStdout(stdout) {
 async function queryClaude({ fullPrompt, callId, timestamp }) {
   const startTime = Date.now();
 
-  const args = [
-    '--dangerously-skip-permissions',
-    '-p', fullPrompt,
-    '--model', CLAUDE_MODEL
-  ];
+  const hasSession = Boolean(callId && sessions.has(callId));
+  const args = buildClaudeArgs({
+    fullPrompt,
+    callId,
+    model: CLAUDE_MODEL,
+    allowDangerous: CLAUDE_DANGEROUS_PERMISSIONS,
+    hasSession,
+  });
 
   if (callId) {
     touchSession(callId);
-    if (sessions.has(callId)) {
-      args.push('--resume', callId);
+    if (hasSession) {
       console.log(`[${timestamp}] Resuming session: ${callId}`);
     } else {
-      args.push('--session-id', callId);
       sessions.set(callId, true);
       console.log(`[${timestamp}] Starting new session: ${callId}`);
     }
@@ -948,7 +955,7 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     service: 'AI Backend HTTP Server',
-    version: '1.2.1',
+    version: '1.2.2',
     endpoints: {
       'POST /ask': 'Send a prompt to the AI backend',
       'POST /ask-structured': 'Send a prompt and return validated JSON (n8n)',
