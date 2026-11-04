@@ -156,6 +156,8 @@ services:
     build:
       context: .
       dockerfile: docker/api-server/Dockerfile
+      args:
+        INSTALL_OPENCODE: ${INSTALL_OPENCODE:-false}
     container_name: ai-backend
     restart: unless-stopped
     network_mode: host
@@ -164,9 +166,14 @@ services:
       AI_BACKEND: ${AI_BACKEND:-ollama}
       OLLAMA_URL: http://127.0.0.1:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      OPENCODE_MODEL: ${OPENCODE_MODEL:-}
+      OPENCODE_AUTO_APPROVE: ${OPENCODE_AUTO_APPROVE:-0}
     volumes:
       # Claude CLI auth (only needed if AI_BACKEND=claude)
       - ${HOME:-/root}/.claude:/root/.claude:ro
+      # OpenCode auth and config (only needed if AI_BACKEND=opencode)
+      - ${HOME:-/root}/.local/share/opencode:/root/.local/share/opencode:ro
+      - ${HOME:-/root}/.config/opencode:/root/.config/opencode:ro
     depends_on:
       - ollama
     # Port: 3333 HTTP (AI query API)

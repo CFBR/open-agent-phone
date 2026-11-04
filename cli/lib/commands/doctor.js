@@ -54,6 +54,30 @@ async function checkClaudeCLI() {
 }
 
 /**
+ * Check if the OpenCode CLI is installed.
+ * @returns {Promise<{installed: boolean, version?: string, error?: string}>}
+ */
+async function checkOpenCodeCLI() {
+  return new Promise((resolve) => {
+    const child = spawn('opencode', ['--version'], { stdio: 'pipe' });
+    let output = '';
+    child.stdout.on('data', (data) => { output += data.toString(); });
+    child.stderr.on('data', (data) => { output += data.toString(); });
+    child.on('close', (code) => {
+      if (code === 0) {
+        const match = output.match(/(\d+\.\d+\.\d+)/);
+        resolve({ installed: true, version: match ? match[1] : 'unknown' });
+      } else {
+        resolve({ installed: false, error: 'OpenCode CLI not found in PATH' });
+      }
+    });
+    child.on('error', () => {
+      resolve({ installed: false, error: 'OpenCode CLI not found' });
+    });
+  });
+}
+
+/**
  * Check ElevenLabs API connectivity
  * @param {string} apiKey - ElevenLabs API key
  * @returns {Promise<{connected: boolean, error?: string}>}
@@ -257,6 +281,18 @@ async function runApiServerChecks(config) {
       console.log(chalk.gray('  → Start Ollama or switch AI_BACKEND in ~/.claude-phone/config.json\n'));
       checks.push({ name: 'Ollama', passed: false });
     }
+  } else if (aiBackend === 'opencode') {
+    const opencodeSpinner = ora('Checking OpenCode CLI...').start();
+    const opencodeResult = await checkOpenCodeCLI();
+    if (opencodeResult.installed) {
+      opencodeSpinner.succeed(chalk.green(`OpenCode CLI installed (v${opencodeResult.version})`));
+      passedCount++;
+    } else {
+      opencodeSpinner.fail(chalk.red(`OpenCode CLI not found: ${opencodeResult.error}`));
+      console.log(chalk.gray('  → Install OpenCode: curl -fsSL https://opencode.ai/install | bash\n'));
+      console.log(chalk.gray('  → Then run: opencode auth login\n'));
+    }
+    checks.push({ name: 'OpenCode CLI', passed: opencodeResult.installed });
   } else {
     const backendSpinner = ora(`Checking AI backend (${aiBackend})...`).start();
     backendSpinner.info(chalk.gray(`AI backend configured: ${aiBackend}`));

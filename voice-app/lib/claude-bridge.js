@@ -6,8 +6,10 @@
 const axios = require('axios');
 const metrics = require('./metrics');
 
-const CLAUDE_API_URL = process.env.CLAUDE_API_URL || 'http://localhost:3333';
-const CLAUDE_API_TOKEN = process.env.CLAUDE_API_TOKEN || '';
+const CLAUDE_API_URL = process.env.AI_API_URL
+  || process.env.CLAUDE_API_URL
+  || 'http://localhost:3333';
+const CLAUDE_API_TOKEN = process.env.AI_API_TOKEN || process.env.CLAUDE_API_TOKEN || '';
 const AI_BACKEND_LABEL = process.env.AI_BACKEND || 'default';
 
 function authHeaders() {

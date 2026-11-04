@@ -315,6 +315,7 @@ async function setupAIBackend(config) {
         { name: 'Ollama (local, free)', value: 'ollama' },
         { name: 'OpenAI API', value: 'openai' },
         { name: 'OpenRouter API', value: 'openrouter' },
+        { name: 'OpenCode (opencode-go, OpenRouter, etc.)', value: 'opencode' },
         { name: 'Custom OpenAI-compatible API', value: 'custom' },
         { name: 'Claude Code CLI (subscription)', value: 'claude' }
       ]
@@ -380,6 +381,28 @@ async function setupAIBackend(config) {
       validated: false
     };
     config.api.openrouterModel = openrouter.model;
+  } else if (answers.aiBackend === 'opencode') {
+    const opencode = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'model',
+        message: 'OpenCode model (format provider/model):',
+        default: config.api.opencodeModel || 'opencode-go/deepseek-v4.1-flash',
+        validate: (input) => {
+          if (!input || input.trim() === '') return 'Model is required';
+          return true;
+        }
+      },
+      {
+        type: 'confirm',
+        name: 'autoApprove',
+        message: 'Auto-approve OpenCode tool permissions?',
+        default: config.api.opencodeAutoApprove === true
+      }
+    ]);
+    config.api.opencodeModel = opencode.model;
+    config.api.opencodeAutoApprove = opencode.autoApprove;
+    console.log(chalk.gray('  OpenCode uses its own auth store. Run "opencode auth login" if needed.\n'));
   } else if (answers.aiBackend === 'custom') {
     const custom = await inquirer.prompt([
       {
@@ -811,6 +834,8 @@ function createDefaultConfig() {
       ttsVoice: 'alloy',
       ttsFormat: 'mp3',
       aiBackend: 'ollama',
+      opencodeModel: '',
+      opencodeAutoApprove: false,
       ollamaUrl: 'http://localhost:11434',
       ollamaModel: 'llama3.2:3b',
       sttProvider: 'openrouter',
@@ -889,71 +914,8 @@ async function setupProviderSelection(config) {
     config.api.ttsProvider = ttsAnswers.ttsProvider;
   }
 
-  // AI Backend selection
-  const aiAnswers = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'aiBackend',
-      message: 'AI backend:',
-      default: config.api.aiBackend || 'ollama',
-      choices: [
-        { name: 'Ollama (local, free)', value: 'ollama' },
-        { name: 'OpenAI API', value: 'openai' },
-        { name: 'OpenRouter API', value: 'openrouter' },
-        { name: 'Custom OpenAI-compatible API', value: 'custom' },
-        { name: 'Claude Code CLI (subscription)', value: 'claude' }
-      ]
-    }
-  ]);
-  config.api.aiBackend = aiAnswers.aiBackend;
-
-  // If Ollama selected, prompt for URL and model
-  if (aiAnswers.aiBackend === 'ollama') {
-    const ollamaAnswers = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'ollamaUrl',
-        message: 'Ollama URL:',
-        default: config.api.ollamaUrl || 'http://localhost:11434',
-        validate: (input) => {
-          if (!input || input.trim() === '') return 'URL is required';
-          try { new URL(input); return true; } catch { return 'Invalid URL format'; }
-        }
-      },
-      {
-        type: 'input',
-        name: 'ollamaModel',
-        message: 'Ollama model:',
-        default: config.api.ollamaModel || 'llama3.2:3b'
-      }
-    ]);
-    config.api.ollamaUrl = ollamaAnswers.ollamaUrl;
-    config.api.ollamaModel = ollamaAnswers.ollamaModel;
-  }
-
-  // If Custom AI backend selected, prompt for URL and API key
-  if (aiAnswers.aiBackend === 'custom') {
-    const customAnswers = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'customAiUrl',
-        message: 'Custom AI API base URL:',
-        default: config.api.customAiUrl || '',
-        validate: (input) => {
-          if (!input || input.trim() === '') return 'URL is required';
-          try { new URL(input); return true; } catch { return 'Invalid URL format'; }
-        }
-      },
-      {
-        type: 'password',
-        name: 'customAiKey',
-        message: 'Custom AI API key:',
-        default: config.api.customAiKey || ''
-      }
-    ]);
-    config.api.customAiUrl = customAnswers.customAiUrl;
-    config.api.customAiKey = customAnswers.customAiKey;
-  }
+  // AI Backend selection and configuration
+  config = await setupAIBackend(config);
 
   // STT Provider selection
   const sttAnswers = await inquirer.prompt([

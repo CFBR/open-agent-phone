@@ -17,19 +17,28 @@
 #   mount ~/.claude:/root/.claude:ro
 #   set AI_BACKEND=claude
 #
-# # For OpenAI or OpenRouter:
+# # For OpenAI, OpenRouter, or Nano-GPT:
 #   set AI_BACKEND=openai    and OPENAI_API_KEY
 #   set AI_BACKEND=openrouter and OPENROUTER_API_KEY
+#
+# # For OpenCode:
+#   build with --build-arg INSTALL_OPENCODE=true
+#   mount ~/.local/share/opencode:/root/.local/share/opencode:ro
+#   mount ~/.config/opencode:/root/.config/opencode:ro
+#   set AI_BACKEND=opencode and OPENCODE_MODEL=provider/model
 #
 # ============================================================================
 
 FROM node:20-bookworm-slim
+
+ARG INSTALL_OPENCODE=false
 
 ENV NODE_ENV=production \
     PORT=3333 \
     AI_BACKEND=ollama \
     OLLAMA_URL=http://ollama:11434 \
     OLLAMA_MODEL=llama3.2:3b \
+    OPENCODE_AUTO_APPROVE=0 \
     CLAUDE_MODEL=claude-sonnet-4-20250514
 
 WORKDIR /app
@@ -40,6 +49,9 @@ RUN npm install --omit=dev
 
 # Copy source
 COPY claude-api-server/ ./ 
+
+# Optional: install the OpenCode CLI for AI_BACKEND=opencode.
+RUN if [ "$INSTALL_OPENCODE" = "true" ]; then npm install -g @opencode/cli; fi
 
 # Optional: Install Claude CLI binary for claude backend mode
 # This is a multi-GB install, so we keep it separate.
