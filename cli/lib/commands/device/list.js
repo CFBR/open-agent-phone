@@ -45,7 +45,9 @@ export async function deviceListCommand() {
     const extPad = device.extension.padEnd(extWidth);
     const resolvedVoice = ttsProvider === 'kokoro'
       ? (device.kokoroVoiceId || device.voiceId || '')
-      : (device.elevenlabsVoiceId || device.voiceId || '');
+      : (ttsProvider === 'elevenlabs'
+        ? (device.elevenlabsVoiceId || device.voiceId || '')
+        : (device.ttsVoiceId || config.api?.ttsVoice || 'alloy'));
     const voiceText = resolvedVoice || '[default]';
     const voiceDisplay = voiceText.length > voiceWidth
       ? voiceText.substring(0, voiceWidth - 3) + '...'

@@ -5,6 +5,8 @@ import { loadConfig, saveConfig, configExists } from '../../config.js';
 import { validateExtension, validateVoiceId } from '../../validators.js';
 import { writeDockerConfig } from '../../docker.js';
 
+const GENERIC_TTS_PROVIDERS = ['openai', 'openrouter', 'nanogpt', 'custom'];
+
 /**
  * Device add command - Add a new SIP device
  * @returns {Promise<void>}
@@ -100,6 +102,19 @@ export async function deviceAddCommand() {
     },
     {
       type: 'input',
+      name: 'ttsVoiceId',
+      message: 'TTS voice ID for this provider (e.g., alloy):',
+      default: config.api.ttsVoice || 'alloy',
+      when: () => GENERIC_TTS_PROVIDERS.includes(ttsProvider),
+      validate: (input) => {
+        if (!input || input.trim() === '') {
+          return 'Voice ID cannot be empty';
+        }
+        return true;
+      }
+    },
+    {
+      type: 'input',
       name: 'prompt',
       message: 'System prompt:',
       default: (answers) => `You are ${answers.name}, a helpful AI assistant accessible via phone.`
@@ -110,6 +125,9 @@ export async function deviceAddCommand() {
   const kokoroVoiceId = answers.kokoroVoiceId
     || config.api.kokoroVoiceId
     || 'af_heart';
+  const ttsVoiceId = answers.ttsVoiceId
+    || config.api.ttsVoice
+    || 'alloy';
 
   // Validate the ElevenLabs voice only when that provider is active.
   let voiceLabel = kokoroVoiceId;
@@ -125,8 +143,11 @@ export async function deviceAddCommand() {
 
     spinner.succeed(chalk.green(`Voice validated: ${voiceResult.name}`));
     voiceLabel = `${voiceResult.name} (${elevenlabsVoiceId})`;
-  } else {
+  } else if (ttsProvider === 'kokoro') {
     console.log(chalk.gray(`  Using Kokoro TTS voice: ${kokoroVoiceId} (no API validation needed)`));
+  } else {
+    voiceLabel = `${ttsVoiceId} (${ttsProvider})`;
+    console.log(chalk.gray(`  Using ${ttsProvider} TTS voice: ${ttsVoiceId}`));
   }
 
   // Add device to config
@@ -137,6 +158,7 @@ export async function deviceAddCommand() {
     password: answers.password,
     elevenlabsVoiceId: elevenlabsVoiceId,
     kokoroVoiceId: kokoroVoiceId,
+    ttsVoiceId: ttsVoiceId,
     voiceId: elevenlabsVoiceId, // legacy ElevenLabs field
     prompt: answers.prompt || `You are ${answers.name}, a helpful AI assistant accessible via phone.`
   };

@@ -19,7 +19,8 @@ import {
   validateHostname,
   validateOllama,
   validateKokoro,
-  validateOpenAICompat
+  validateOpenAICompat,
+  validateOpenAITts
 } from '../validators.js';
 import { getLocalIP, getProjectRoot } from '../utils.js';
 import { isRaspberryPi } from '../platform.js';
@@ -27,6 +28,8 @@ import { detect3cxSbc } from '../port-check.js';
 import { checkPiPrerequisites } from '../prerequisites.js';
 import { checkClaudeApiServer } from '../network.js';
 import { runPrereqChecks } from '../prereqs.js';
+
+const GENERIC_TTS_PROVIDERS = ['openai', 'openrouter', 'nanogpt', 'custom'];
 
 /**
  * Prompt for installation type
@@ -802,6 +805,11 @@ function createDefaultConfig() {
       openrouter: { apiKey: '', validated: false },
       // Provider selection fields
       ttsProvider: 'kokoro',
+      ttsBaseUrl: '',
+      ttsApiKey: '',
+      ttsModel: '',
+      ttsVoice: 'alloy',
+      ttsFormat: 'mp3',
       aiBackend: 'ollama',
       ollamaUrl: 'http://localhost:11434',
       ollamaModel: 'llama3.2:3b',
@@ -841,19 +849,45 @@ async function setupProviderSelection(config) {
   console.log(chalk.bold('\n🔧 Provider Selection'));
 
   // TTS Provider selection
+  const ttsDefault = ['kokoro', 'elevenlabs', 'openai-compatible'].includes(config.api.ttsProvider)
+    ? config.api.ttsProvider
+    : (GENERIC_TTS_PROVIDERS.includes(config.api.ttsProvider) ? 'openai-compatible' : 'kokoro');
   const ttsAnswers = await inquirer.prompt([
     {
       type: 'list',
       name: 'ttsProvider',
       message: 'Text-to-Speech provider:',
-      default: config.api.ttsProvider || 'kokoro',
+      default: ttsDefault,
       choices: [
         { name: 'Kokoro-82M (local, free, open-source)', value: 'kokoro' },
-        { name: 'ElevenLabs (cloud, premium quality)', value: 'elevenlabs' }
+        { name: 'ElevenLabs (cloud, premium quality)', value: 'elevenlabs' },
+        { name: 'OpenAI-compatible (OpenAI, OpenRouter, Nano-GPT, custom)', value: 'openai-compatible' }
       ]
     }
   ]);
-  config.api.ttsProvider = ttsAnswers.ttsProvider;
+
+  if (ttsAnswers.ttsProvider === 'openai-compatible') {
+    const presetDefault = GENERIC_TTS_PROVIDERS.includes(config.api.ttsProvider)
+      ? config.api.ttsProvider
+      : 'openai';
+    const { ttsPreset } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'ttsPreset',
+        message: 'Which OpenAI-compatible TTS provider?',
+        default: presetDefault,
+        choices: [
+          { name: 'OpenAI', value: 'openai' },
+          { name: 'OpenRouter', value: 'openrouter' },
+          { name: 'Nano-GPT', value: 'nanogpt' },
+          { name: 'Custom endpoint', value: 'custom' }
+        ]
+      }
+    ]);
+    config.api.ttsProvider = ttsPreset;
+  } else {
+    config.api.ttsProvider = ttsAnswers.ttsProvider;
+  }
 
   // AI Backend selection
   const aiAnswers = await inquirer.prompt([
@@ -1088,7 +1122,7 @@ async function setupAPIKeys(config) {
       voiceSpinner.succeed(`Voice ID validated: ${voiceValidation.name}`);
       config.api.elevenlabs.defaultVoiceId = defaultVoiceId;
     }
-  } else {
+  } else if (config.api.ttsProvider === 'kokoro') {
     // Kokoro TTS - no API key needed, but ask for voice ID
     console.log(chalk.gray('  Using Kokoro TTS (local, no API key required)'));
     const kokoroVoiceAnswers = await inquirer.prompt([
@@ -1106,6 +1140,103 @@ async function setupAPIKeys(config) {
       }
     ]);
     config.api.kokoroVoiceId = kokoroVoiceAnswers.voiceId;
+  } else if (GENERIC_TTS_PROVIDERS.includes(config.api.ttsProvider)) {
+    const provider = config.api.ttsProvider;
+    const defaults = {
+      openai: {
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'tts-1',
+        voice: 'alloy',
+        apiKey: config.api.openai?.apiKey || ''
+      },
+      openrouter: {
+        baseUrl: 'https://openrouter.ai/api/v1',
+        model: '',
+        voice: 'alloy',
+        apiKey: config.api.openrouter?.apiKey || ''
+      },
+      nanogpt: {
+        baseUrl: process.env.NANOGPT_TTS_URL || '',
+        model: '',
+        voice: 'alloy',
+        apiKey: config.api.nanogptApiKey || ''
+      },
+      custom: {
+        baseUrl: '',
+        model: '',
+        voice: 'alloy',
+        apiKey: config.api.ttsApiKey || ''
+      }
+    };
+    const providerDefaults = defaults[provider];
+
+    console.log(chalk.gray(`  Using ${provider} TTS (OpenAI-compatible /audio/speech endpoint)`));
+    const ttsAnswers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'baseUrl',
+        message: 'TTS base URL (include /v1 if the provider requires it):',
+        default: config.api.ttsBaseUrl || providerDefaults.baseUrl,
+        validate: (input) => {
+          if (!input || input.trim() === '') return 'Base URL is required';
+          try { new URL(input); return true; } catch { return 'Invalid URL format'; }
+        }
+      },
+      {
+        type: 'password',
+        name: 'apiKey',
+        message: 'TTS API key (leave blank for a local endpoint):',
+        default: config.api.ttsApiKey || providerDefaults.apiKey
+      },
+      {
+        type: 'input',
+        name: 'model',
+        message: 'TTS model:',
+        default: config.api.ttsModel || providerDefaults.model,
+        validate: (input) => {
+          if (!input || input.trim() === '') return 'Model is required';
+          return true;
+        }
+      },
+      {
+        type: 'input',
+        name: 'voice',
+        message: 'Default TTS voice:',
+        default: config.api.ttsVoice || providerDefaults.voice,
+        validate: (input) => {
+          if (!input || input.trim() === '') return 'Voice is required';
+          return true;
+        }
+      },
+      {
+        type: 'list',
+        name: 'format',
+        message: 'Audio format:',
+        choices: ['mp3', 'wav'],
+        default: config.api.ttsFormat || 'mp3'
+      }
+    ]);
+
+    config.api.ttsBaseUrl = ttsAnswers.baseUrl;
+    config.api.ttsApiKey = ttsAnswers.apiKey;
+    config.api.ttsModel = ttsAnswers.model;
+    config.api.ttsVoice = ttsAnswers.voice;
+    config.api.ttsFormat = ttsAnswers.format;
+
+    const ttsSpinner = ora('Checking TTS endpoint...').start();
+    const ttsResult = await validateOpenAITts({
+      baseUrl: config.api.ttsBaseUrl,
+      apiKey: config.api.ttsApiKey,
+      model: config.api.ttsModel,
+      voice: config.api.ttsVoice,
+      format: config.api.ttsFormat
+    });
+    if (ttsResult.valid) {
+      ttsSpinner.succeed('TTS endpoint connected');
+    } else {
+      ttsSpinner.warn(`TTS endpoint check failed: ${ttsResult.error}`);
+      console.log(chalk.gray('  You can continue setup and fix the TTS settings later.\n'));
+    }
   }
 
   // OpenRouter API Key (only if STT provider is OpenRouter or AI backend is OpenRouter)
@@ -1452,6 +1583,20 @@ async function setupDevice(config) {
       name: 'kokoroVoiceId',
       message: 'Kokoro voice ID (e.g., af_heart, am_adam):',
       default: existingDevice?.kokoroVoiceId || config.api.kokoroVoiceId || 'af_heart',
+      when: () => (config.api.ttsProvider || 'kokoro') === 'kokoro',
+      validate: (input) => {
+        if (!input || input.trim() === '') {
+          return 'Voice ID is required';
+        }
+        return true;
+      }
+    },
+    {
+      type: 'input',
+      name: 'ttsVoiceId',
+      message: 'TTS voice ID for this provider (e.g., alloy):',
+      default: existingDevice?.ttsVoiceId || config.api.ttsVoice || 'alloy',
+      when: () => GENERIC_TTS_PROVIDERS.includes(config.api.ttsProvider),
       validate: (input) => {
         if (!input || input.trim() === '') {
           return 'Voice ID is required';
@@ -1518,6 +1663,7 @@ async function setupDevice(config) {
     password: answers.password,
     elevenlabsVoiceId: elevenlabsVoiceId,
     kokoroVoiceId: kokoroVoiceId,
+    ttsVoiceId: answers.ttsVoiceId || existingDevice?.ttsVoiceId || config.api.ttsVoice || '',
     voiceId: elevenlabsVoiceId || '', // legacy ElevenLabs field for backward compat
     prompt: answers.prompt
   };

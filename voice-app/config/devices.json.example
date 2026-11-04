@@ -4,6 +4,9 @@
     "extension": "9000",
     "authId": "your-3cx-auth-id",
     "password": "your-3cx-password",
+    "elevenlabsVoiceId": "your-elevenlabs-voice-id",
+    "kokoroVoiceId": "af_heart",
+    "ttsVoiceId": "alloy",
     "voiceId": "your-elevenlabs-voice-id",
     "prompt": "You are a helpful AI assistant. Keep voice responses under 40 words."
   },
@@ -12,7 +15,10 @@
     "extension": "9002",
     "authId": "another-auth-id",
     "password": "another-password",
-    "voiceId": "another-voice-id",
+    "elevenlabsVoiceId": "another-elevenlabs-voice-id",
+    "kokoroVoiceId": "am_adam",
+    "ttsVoiceId": "alloy",
+    "voiceId": "another-elevenlabs-voice-id",
     "prompt": "You are a server monitoring assistant. Report on system health and alerts. Keep voice responses under 40 words."
   }
 }

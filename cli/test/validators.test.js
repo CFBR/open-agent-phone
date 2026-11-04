@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import {
   validateElevenLabsKey,
-  validateOpenRouterKey
+  validateOpenRouterKey,
+  validateOpenAITts
 } from '../lib/validators.js';
 
 test('validators module', async (t) => {
@@ -28,6 +29,18 @@ test('validators module', async (t) => {
     const result = await validateOpenRouterKey('invalid-key');
     assert.strictEqual(result.valid, false);
     assert.ok(result.error);
+  });
+
+  await t.test('validateOpenAITts rejects missing base URL', async () => {
+    const result = await validateOpenAITts({ baseUrl: '', model: 'tts-1' });
+    assert.strictEqual(result.valid, false);
+    assert.match(result.error, /Base URL is required/);
+  });
+
+  await t.test('validateOpenAITts rejects missing model', async () => {
+    const result = await validateOpenAITts({ baseUrl: 'https://example.test/v1', model: '' });
+    assert.strictEqual(result.valid, false);
+    assert.match(result.error, /Model is required/);
   });
 
   // Note: We can't test successful validation without real API keys

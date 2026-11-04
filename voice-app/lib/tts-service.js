@@ -1,7 +1,15 @@
 /**
  * Text-to-Speech Service
- * Supports ElevenLabs (cloud) and Kokoro-82M (local via Kokoro-FastAPI)
- * Controlled by TTS_PROVIDER env var: "elevenlabs" (default) or "kokoro"
+ *
+ * Providers:
+ * - elevenlabs: ElevenLabs cloud API
+ * - kokoro: local Kokoro-FastAPI OpenAI-compatible endpoint
+ * - openai: OpenAI or any OpenAI-compatible /audio/speech endpoint
+ * - openrouter: OpenRouter's OpenAI-compatible endpoint
+ * - nanogpt: Nano-GPT's OpenAI-compatible endpoint
+ * - custom: any other OpenAI-compatible /audio/speech endpoint
+ *
+ * Controlled by TTS_PROVIDER.
  */
 
 const axios = require('axios');
@@ -24,15 +32,81 @@ const ELEVENLABS_MODEL = 'eleven_turbo_v2';
 // Kokoro local config
 const KOKORO_TTS_URL = process.env.KOKORO_TTS_URL || 'http://127.0.0.1:8880';
 
+const GENERIC_PROVIDERS = new Set(['openai', 'openrouter', 'nanogpt', 'custom']);
+
+function normalizeBaseUrl(url) {
+  return String(url || '').trim().replace(/\/+$/, '');
+}
+
+function speechEndpoint(baseUrl) {
+  const base = normalizeBaseUrl(baseUrl);
+  if (!base) return '';
+  if (/\/audio\/speech$/i.test(base)) return base;
+  return `${base}/audio/speech`;
+}
+
+/**
+ * Resolve configuration for an OpenAI-compatible TTS provider.
+ * @param {string} [provider]
+ * @returns {{baseUrl: string, apiKey: string, model: string, voice: string, format: string}}
+ */
+function getGenericConfig(provider = TTS_PROVIDER) {
+  const name = String(provider || '').toLowerCase();
+  const common = {
+    baseUrl: normalizeBaseUrl(process.env.TTS_BASE_URL),
+    apiKey: process.env.TTS_API_KEY || '',
+    model: process.env.TTS_MODEL || '',
+    voice: process.env.TTS_VOICE || '',
+    format: (process.env.TTS_FORMAT || 'mp3').toLowerCase(),
+  };
+
+  switch (name) {
+    case 'openai':
+      return {
+        ...common,
+        baseUrl: common.baseUrl || 'https://api.openai.com/v1',
+        apiKey: common.apiKey || process.env.OPENAI_API_KEY || '',
+        model: common.model || 'tts-1',
+        voice: common.voice || 'alloy',
+      };
+    case 'openrouter':
+      return {
+        ...common,
+        baseUrl: common.baseUrl || 'https://openrouter.ai/api/v1',
+        apiKey: common.apiKey || process.env.OPENROUTER_API_KEY || '',
+        model: common.model,
+        voice: common.voice || 'alloy',
+      };
+    case 'nanogpt':
+      return {
+        ...common,
+        baseUrl: common.baseUrl || process.env.NANOGPT_TTS_URL || '',
+        apiKey: common.apiKey || process.env.NANOGPT_API_KEY || '',
+        model: common.model,
+        voice: common.voice || 'alloy',
+      };
+    case 'custom':
+      return {
+        ...common,
+        apiKey: common.apiKey || process.env.CUSTOM_TTS_API_KEY || '',
+        voice: common.voice || 'alloy',
+      };
+    default:
+      return common;
+  }
+}
+
 // Default voice IDs per provider
 const DEFAULT_VOICES = {
-  elevenlabs: 'JAgnJveGGUh4qy4kh6dF',  // Morpheus
-  kokoro: 'af_heart'                     // American Female (heart)
+  elevenlabs: process.env.ELEVENLABS_VOICE_ID || 'JAgnJveGGUh4qy4kh6dF',  // Morpheus
+  kokoro: process.env.KOKORO_VOICE || 'af_heart',                         // American Female (heart)
+  openai: getGenericConfig('openai').voice,
+  openrouter: getGenericConfig('openrouter').voice,
+  nanogpt: getGenericConfig('nanogpt').voice,
+  custom: getGenericConfig('custom').voice,
 };
 
-const DEFAULT_VOICE_ID = TTS_PROVIDER === 'elevenlabs'
-  ? (process.env.ELEVENLABS_VOICE_ID || DEFAULT_VOICES.elevenlabs)
-  : (DEFAULT_VOICES[TTS_PROVIDER] || DEFAULT_VOICES.elevenlabs);
+const DEFAULT_VOICE_ID = DEFAULT_VOICES[TTS_PROVIDER] || DEFAULT_VOICES.elevenlabs;
 
 /**
  * Resolve a possibly-null voice ID. Callers pass `null` when a device has no
@@ -166,6 +240,74 @@ async function generateKokoro(text, voiceId) {
 }
 
 /**
+ * Build an OpenAI-compatible /audio/speech request.
+ * @param {Object} config
+ * @param {string} config.baseUrl
+ * @param {string} [config.apiKey]
+ * @param {string} config.model
+ * @param {string} [config.voice]
+ * @param {string} [config.format]
+ * @param {string} text
+ * @returns {{url: string, headers: Object, data: Object}}
+ */
+function buildOpenAIRequest(config, text) {
+  if (!config || !config.baseUrl) {
+    throw new Error('TTS_BASE_URL is required for this provider');
+  }
+  if (!config.model) {
+    throw new Error('TTS_MODEL is required for this provider');
+  }
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+
+  const format = config.format === 'wav' ? 'wav' : 'mp3';
+  return {
+    url: speechEndpoint(config.baseUrl),
+    headers,
+    data: {
+      model: config.model,
+      input: text,
+      voice: config.voice || 'alloy',
+      response_format: format,
+    },
+  };
+}
+
+/**
+ * Generate speech via any OpenAI-compatible /audio/speech endpoint.
+ * @param {string} text
+ * @param {string} voiceId
+ * @returns {Promise<{buffer: Buffer, ext: string}>}
+ */
+async function generateOpenAICompatible(text, voiceId) {
+  const config = getGenericConfig();
+  const request = buildOpenAIRequest({ ...config, voice: resolveVoiceId(voiceId) }, text);
+
+  logger.info('Generating speech with OpenAI-compatible TTS', {
+    provider: TTS_PROVIDER,
+    endpoint: request.url,
+    model: config.model,
+    voice: request.data.voice,
+    format: request.data.response_format
+  });
+
+  const response = await axios({
+    method: 'POST',
+    url: request.url,
+    headers: request.headers,
+    data: request.data,
+    responseType: 'arraybuffer',
+    timeout: 30000
+  });
+
+  return {
+    buffer: response.data,
+    ext: request.data.response_format === 'wav' ? 'wav' : 'mp3'
+  };
+}
+
+/**
  * Convert text to speech
  * @param {string} text - Text to convert to speech
  * @param {string} voiceId - Voice ID (provider-specific)
@@ -195,12 +337,20 @@ async function generateSpeech(text, voiceId) {
 
     if (TTS_PROVIDER === 'kokoro') {
       result = await withRetry(() => generateKokoro(text, resolvedVoiceId), { name: 'tts-kokoro' });
-    } else {
-      // Default: ElevenLabs
+    } else if (TTS_PROVIDER === 'elevenlabs') {
       if (!ELEVENLABS_API_KEY) {
         throw new Error('ELEVENLABS_API_KEY environment variable not set');
       }
       result = await withRetry(() => generateElevenLabs(text, resolvedVoiceId), { name: 'tts-elevenlabs' });
+    } else if (GENERIC_PROVIDERS.has(TTS_PROVIDER)) {
+      result = await withRetry(
+        () => generateOpenAICompatible(text, resolvedVoiceId),
+        { name: `tts-${TTS_PROVIDER}` }
+      );
+    } else {
+      throw new Error(
+        `Unknown TTS_PROVIDER "${TTS_PROVIDER}". Use elevenlabs, kokoro, openai, openrouter, nanogpt, or custom.`
+      );
     }
 
     // Save audio file
@@ -243,15 +393,28 @@ async function generateSpeech(text, voiceId) {
 
     if (TTS_PROVIDER === 'kokoro') {
       if (error.code === 'ECONNREFUSED') {
-        throw new Error('Kokoro TTS server not running — start it with docker compose');
+        throw new Error('Kokoro TTS server not running. Start it with docker compose');
       } else if (error.code === 'ECONNABORTED') {
         throw new Error('Kokoro TTS request timed out');
       }
-    } else {
+    } else if (TTS_PROVIDER === 'elevenlabs') {
       if (error.response?.status === 401) {
-        throw new Error('ElevenLabs API authentication failed — check API key');
+        throw new Error('ElevenLabs API authentication failed. Check the API key');
       } else if (error.response?.status === 429) {
         throw new Error('ElevenLabs API rate limit exceeded');
+      }
+    } else {
+      const status = error.response?.status;
+      if (status === 401 || status === 403) {
+        throw new Error(`${TTS_PROVIDER} TTS authentication failed. Check TTS_API_KEY`);
+      } else if (status === 404) {
+        throw new Error(`${TTS_PROVIDER} TTS endpoint or model not found. Check TTS_BASE_URL and TTS_MODEL`);
+      } else if (status === 429) {
+        throw new Error(`${TTS_PROVIDER} TTS rate limit exceeded`);
+      } else if (error.code === 'ECONNREFUSED') {
+        throw new Error(`${TTS_PROVIDER} TTS server not reachable. Check TTS_BASE_URL`);
+      } else if (error.code === 'ECONNABORTED') {
+        throw new Error(`${TTS_PROVIDER} TTS request timed out`);
       }
     }
 
@@ -268,7 +431,14 @@ function isAvailable() {
     // Kokoro is available if the URL is set (container may not be running yet)
     return !!KOKORO_TTS_URL;
   }
-  return !!ELEVENLABS_API_KEY;
+  if (TTS_PROVIDER === 'elevenlabs') {
+    return !!ELEVENLABS_API_KEY;
+  }
+  if (GENERIC_PROVIDERS.has(TTS_PROVIDER)) {
+    const config = getGenericConfig();
+    return !!config.baseUrl && !!config.model;
+  }
+  return false;
 }
 
 /**
@@ -304,6 +474,17 @@ async function getAvailableVoices() {
       { voice_id: 'bm_george', name: 'British Male (george)' },
       { voice_id: 'bm_lewis', name: 'British Male (lewis)' },
     ];
+  }
+
+  if (GENERIC_PROVIDERS.has(TTS_PROVIDER)) {
+    const configured = (process.env.TTS_VOICES || '')
+      .split(',')
+      .map((voice) => voice.trim())
+      .filter(Boolean);
+    const voices = configured.length
+      ? configured
+      : [getGenericConfig().voice || 'alloy'];
+    return voices.map((voice) => ({ voice_id: voice, name: `${voice} (default)` }));
   }
 
   // ElevenLabs: fetch from API
@@ -373,6 +554,11 @@ module.exports = {
   isAvailable,
   getProvider,
   resolveVoiceId,
+  getGenericConfig,
+  buildOpenAIRequest,
+  speechEndpoint,
+  GENERIC_PROVIDERS,
+  DEFAULT_VOICES,
   DEFAULT_VOICE_ID,
   // Exposed for testing / cache introspection
   ttsCache,
