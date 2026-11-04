@@ -424,8 +424,78 @@ export async function stopContainers() {
   });
 }
 
+const CONTAINER_NAME_PATTERN = /voice-app|drachtio|freeswitch|kokoro-tts|faster-whisper|ai-backend|ollama|sbc/i;
+
 /**
- * Get status of Docker containers
+ * Parse `docker compose ps --format json` output.
+ * Compose emits either one JSON object per line or a JSON array.
+ * @param {string} output
+ * @returns {Array<{name: string, status: string}>}
+ */
+export function parseComposePsOutput(output) {
+  const text = String(output || '').trim();
+  if (!text) return [];
+
+  const rows = text.startsWith('[')
+    ? JSON.parse(text)
+    : text.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line));
+
+  return rows
+    .filter((row) => row && typeof row === 'object')
+    .map((row) => ({
+      name: row.Name || row.Service || 'unknown',
+      status: row.State || row.Status || 'unknown'
+    }));
+}
+
+/**
+ * Parse `docker ps --format '{{.Names}}\t{{.Status}}'` output and keep only
+ * containers that belong to this stack.
+ * @param {string} output
+ * @returns {Array<{name: string, status: string}>}
+ */
+export function parseDockerPsOutput(output) {
+  return String(output || '')
+    .trim()
+    .split('\n')
+    .filter((line) => line.trim())
+    .map((line) => {
+      const [name, ...statusParts] = line.split('\t');
+      return {
+        name: name || 'unknown',
+        status: statusParts.join('\t') || 'unknown'
+      };
+    })
+    .filter((container) => CONTAINER_NAME_PATTERN.test(container.name));
+}
+
+function runCommand(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: 'pipe',
+      ...options
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => { stdout += data.toString(); });
+    child.stderr.on('data', (data) => { stderr += data.toString(); });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`${command} exited with code ${code}: ${stderr}`));
+    });
+  });
+}
+
+/**
+ * Get status of Docker containers.
+ *
+ * Compose ps can fail when the Compose project label is missing or the file
+ * was generated in a different directory. Fall back to `docker ps` and keep
+ * only the containers that belong to this stack.
+ *
  * @returns {Promise<Array<{name: string, status: string}>>}
  */
 export async function getContainerStatus() {
@@ -436,37 +506,23 @@ export async function getContainerStatus() {
   }
 
   const compose = getComposeCommand();
-  const composeArgs = [...compose.args, '-f', dockerComposePath, 'ps', '--format', 'json'];
 
-  return new Promise((resolve) => {
-    const child = spawn(compose.cmd, composeArgs, {
-      stdio: 'pipe'
-    });
+  try {
+    const output = await runCommand(
+      compose.cmd,
+      [...compose.args, '-f', dockerComposePath, 'ps', '--format', 'json'],
+      { cwd: getConfigDir() }
+    );
+    const containers = parseComposePsOutput(output);
+    if (containers.length > 0) return containers;
+  } catch (error) {
+    // Fall through to docker ps below.
+  }
 
-    let output = '';
-    child.stdout.on('data', (data) => {
-      output += data.toString();
-    });
-
-    child.on('close', (code) => {
-      if (code === 0) {
-        try {
-          // Parse JSON lines (one per container)
-          const lines = output.trim().split('\n').filter(l => l);
-          const containers = lines.map(line => {
-            const data = JSON.parse(line);
-            return {
-              name: data.Name || data.Service,
-              status: data.State || data.Status
-            };
-          });
-          resolve(containers);
-        } catch (error) {
-          resolve([]);
-        }
-      } else {
-        resolve([]);
-      }
-    });
-  });
+  try {
+    const output = await runCommand('docker', ['ps', '--format', '{{.Names}}\t{{.Status}}']);
+    return parseDockerPsOutput(output);
+  } catch (error) {
+    return [];
+  }
 }
