@@ -25,10 +25,19 @@ export function buildApiServerEnv(config = {}) {
   if (api.openai?.model) env.OPENAI_MODEL = api.openai.model;
   if (api.openrouter?.apiKey) env.OPENROUTER_API_KEY = api.openrouter.apiKey;
   if (api.openrouterModel) env.OPENROUTER_MODEL = api.openrouterModel;
+  if (api.opencodeModel) env.OPENCODE_MODEL = api.opencodeModel;
+  env.OPENCODE_AUTO_APPROVE = api.opencodeAutoApprove ? '1' : '0';
   if (api.customAiUrl) env.AI_BACKEND_URL = api.customAiUrl;
   if (api.customAiKey) env.AI_API_KEY = api.customAiKey;
   if (api.customAiModel) env.AI_MODEL = api.customAiModel;
-  if (server.claudeApiToken) env.CLAUDE_API_TOKEN = server.claudeApiToken;
+  if (api.aiTimeoutMs || server.aiTimeoutMs) {
+    env.AI_TIMEOUT_MS = String(api.aiTimeoutMs || server.aiTimeoutMs);
+  }
+  if (server.claudeApiToken) {
+    env.AI_API_TOKEN = server.claudeApiToken;
+    // Keep the older name working for existing deployments.
+    env.CLAUDE_API_TOKEN = server.claudeApiToken;
+  }
 
   return env;
 }

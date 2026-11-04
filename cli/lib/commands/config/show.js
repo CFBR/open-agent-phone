@@ -54,6 +54,9 @@ export async function configShowCommand() {
   }
   console.log(chalk.gray(`  STT: ${config.api?.sttProvider || 'openrouter'}`));
   console.log(chalk.gray(`  AI backend: ${config.api?.aiBackend || 'ollama'}`));
+  if (config.api?.aiBackend === 'opencode' && config.api.opencodeModel) {
+    console.log(chalk.gray(`  OpenCode model: ${config.api.opencodeModel}`));
+  }
 
   // 3CX Configuration
   console.log(chalk.bold('\n3CX Configuration:'));

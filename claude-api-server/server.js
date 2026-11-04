@@ -1,14 +1,14 @@
 /**
- * Claude HTTP API Server
+ * AI Backend HTTP Server
  *
- * HTTP server that wraps Claude Code CLI with session management
- * Runs on the API server to handle voice interface queries
+ * HTTP server that wraps Claude Code CLI, OpenCode CLI, Ollama, and
+ * OpenAI-compatible APIs with session management.
  *
  * Usage:
  *   node server.js
  *
  * Endpoints:
- *   POST /ask - Send a prompt to Claude (with optional callId for session)
+ *   POST /ask - Send a prompt to the AI backend (with optional callId for session)
  *   POST /end-session - Clean up session for a call
  *   GET /health - Health check
  */
@@ -29,6 +29,11 @@ const {
   validateRequiredFields,
   buildRepairPrompt,
 } = require('./structured');
+const {
+  buildOpenCodeArgs,
+  parseOpenCodeStdout,
+  sessionIdForCall,
+} = require('./opencode');
 
 const app = express();
 const PORT = process.env.PORT || 3333;
@@ -133,10 +138,25 @@ function endSessionStorage(callId) { return sessionStore.end(callId); }
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
 
 // Network and request limits
-const API_TOKEN = process.env.CLAUDE_API_TOKEN || '';
-const BIND_HOST = process.env.CLAUDE_API_HOST || '127.0.0.1';
-const CLAUDE_TIMEOUT_MS = parseInt(process.env.CLAUDE_TIMEOUT_MS, 10) || 120000;
+const API_TOKEN = process.env.AI_API_TOKEN || process.env.CLAUDE_API_TOKEN || '';
+const BIND_HOST = process.env.AI_API_HOST || process.env.CLAUDE_API_HOST || '127.0.0.1';
+const AI_TIMEOUT_MS = parseInt(process.env.AI_TIMEOUT_MS, 10)
+  || parseInt(process.env.CLAUDE_TIMEOUT_MS, 10)
+  || 120000;
 const MAX_HISTORY_MESSAGES = parseInt(process.env.MAX_HISTORY_MESSAGES, 10) || 40;
+const OPENCODE_MODEL = process.env.OPENCODE_MODEL || process.env.AI_MODEL || '';
+const OPENCODE_AUTO_APPROVE = process.env.OPENCODE_AUTO_APPROVE === '1';
+
+function getActiveModelLabel() {
+  switch (AI_BACKEND) {
+    case 'opencode': return OPENCODE_MODEL || '[not set]';
+    case 'ollama': return OLLAMA_MODEL;
+    case 'openai': return process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    case 'openrouter': return process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+    case 'custom': return process.env.AI_MODEL || '[not set]';
+    default: return CLAUDE_MODEL;
+  }
+}
 
 // ============================================
 // AI Backend Router Configuration
@@ -146,6 +166,7 @@ const MAX_HISTORY_MESSAGES = parseInt(process.env.MAX_HISTORY_MESSAGES, 10) || 4
 //   ollama     — Local LLM via Ollama (default, free, runs in Docker)
 //   openai     — OpenAI API (requires OPENAI_API_KEY)
 //   openrouter — OpenRouter API (requires OPENROUTER_API_KEY)
+//   opencode   — OpenCode CLI with any configured provider/model
 //   custom     — Any OpenAI-compatible API at AI_BACKEND_URL
 //   claude     — Claude Code CLI (original behavior, needs subscription)
 //
@@ -156,10 +177,13 @@ const AI_BACKEND_URL = process.env.AI_BACKEND_URL || '';
 
 console.log(`[STARTUP] AI backend: ${AI_BACKEND}`);
 if (AI_BACKEND === 'claude') {
-  console.warn('[STARTUP] Claude backend runs with --dangerously-skip-permissions. Keep this server behind CLAUDE_API_TOKEN and a trusted network.');
+  console.warn('[STARTUP] Claude backend runs with --dangerously-skip-permissions. Keep this server behind AI_API_TOKEN and a trusted network.');
 }
 if (AI_BACKEND === 'ollama') {
   console.log(`[STARTUP] Ollama URL: ${OLLAMA_URL}, model: ${OLLAMA_MODEL}`);
+}
+if (AI_BACKEND === 'opencode') {
+  console.log(`[STARTUP] OpenCode model: ${OPENCODE_MODEL || '[not set]'}, auto-approve: ${OPENCODE_AUTO_APPROVE}`);
 }
 
 function parseClaudeStdout(stdout) {
@@ -243,9 +267,9 @@ async function queryClaude({ fullPrompt, callId, timestamp }) {
         response: '',
         sessionId: null,
         duration_ms: Date.now() - startTime,
-        error: `Claude timed out after ${CLAUDE_TIMEOUT_MS}ms`,
+        error: `Claude timed out after ${AI_TIMEOUT_MS}ms`,
       });
-    }, CLAUDE_TIMEOUT_MS);
+    }, AI_TIMEOUT_MS);
 
     claude.stdin.end();
     claude.stdout.on('data', (data) => { stdout += data.toString(); });
@@ -264,6 +288,126 @@ async function queryClaude({ fullPrompt, callId, timestamp }) {
         const { response, sessionId } = parseClaudeStdout(stdout);
         finish({ success: true, response, sessionId, duration_ms });
       }
+    });
+  });
+}
+
+/**
+ * Query the OpenCode CLI. Uses a private standalone server and a ses_ session
+ * derived from the call ID.
+ */
+async function queryOpenCode({ fullPrompt, callId, timestamp }) {
+  const startTime = Date.now();
+  if (!OPENCODE_MODEL) {
+    return {
+      success: false,
+      response: '',
+      sessionId: null,
+      duration_ms: 0,
+      error: 'OPENCODE_MODEL or AI_MODEL is not set',
+    };
+  }
+
+  const sessionId = sessionIdForCall(callId);
+  let args;
+  try {
+    args = buildOpenCodeArgs({
+      model: OPENCODE_MODEL,
+      sessionId,
+      autoApprove: OPENCODE_AUTO_APPROVE,
+    });
+  } catch (error) {
+    return {
+      success: false,
+      response: '',
+      sessionId: null,
+      duration_ms: 0,
+      error: error.message,
+    };
+  }
+
+  console.log(`[${timestamp}] OPENCODE query model=${OPENCODE_MODEL} session=${sessionId || 'none'} auto=${OPENCODE_AUTO_APPROVE}`);
+
+  return new Promise((resolve) => {
+    const child = spawn('opencode', args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      shell: false,
+      env: process.env,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    function finish(result) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    }
+
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // Process may have already exited.
+      }
+      finish({
+        success: false,
+        response: '',
+        sessionId,
+        duration_ms: Date.now() - startTime,
+        error: `OpenCode timed out after ${AI_TIMEOUT_MS}ms`,
+      });
+    }, AI_TIMEOUT_MS);
+
+    child.stdin.end(fullPrompt);
+    child.stdout.on('data', (data) => { stdout += data.toString(); });
+    child.stderr.on('data', (data) => { stderr += data.toString(); });
+
+    child.on('error', (error) => {
+      finish({
+        success: false,
+        response: '',
+        sessionId: null,
+        duration_ms: Date.now() - startTime,
+        error: error.message,
+      });
+    });
+
+    child.on('close', (code) => {
+      const duration_ms = Date.now() - startTime;
+      const parsed = parseOpenCodeStdout(stdout);
+      const resolvedSession = parsed.sessionId || sessionId;
+
+      if (code !== 0) {
+        finish({
+          success: false,
+          response: parsed.response,
+          sessionId: resolvedSession,
+          duration_ms,
+          error: stderr || `OpenCode exited with code ${code}`,
+        });
+        return;
+      }
+
+      if (!parsed.response) {
+        finish({
+          success: false,
+          response: '',
+          sessionId: resolvedSession,
+          duration_ms,
+          error: 'OpenCode returned an empty response',
+        });
+        return;
+      }
+
+      finish({
+        success: true,
+        response: parsed.response,
+        sessionId: resolvedSession,
+        duration_ms,
+      });
     });
   });
 }
@@ -447,6 +591,9 @@ async function queryAI({ fullPrompt, callId, timestamp }) {
         model: process.env.AI_MODEL,
       });
 
+    case 'opencode':
+      return queryOpenCode({ fullPrompt, callId, timestamp });
+
     case 'claude':
       return queryClaude({ fullPrompt, callId, timestamp });
 
@@ -456,7 +603,7 @@ async function queryAI({ fullPrompt, callId, timestamp }) {
         response: '',
         sessionId: null,
         duration_ms: 0,
-        error: `Unknown AI_BACKEND: ${AI_BACKEND}. Valid options: ollama, openai, openrouter, custom, claude`,
+        error: `Unknown AI_BACKEND: ${AI_BACKEND}. Valid options: ollama, openai, openrouter, opencode, custom, claude`,
       };
   }
 }
@@ -464,7 +611,7 @@ async function queryAI({ fullPrompt, callId, timestamp }) {
 /**
  * Voice Context - Prepended to all voice queries
  *
- * This tells Claude how to handle voice-specific patterns:
+ * This tells the AI backend how to handle voice-specific patterns:
  * - Output VOICE_RESPONSE for TTS (conversational, 40 words max)
  * - Output COMPLETED for status logging (12 words max)
  * - For Slack delivery requests: do the work, send to Slack, then acknowledge
@@ -568,7 +715,7 @@ app.post('/ask', async (req, res) => {
   const existingSession = callId ? sessions.get(callId) : null;
 
   console.log(`[${timestamp}] QUERY: "${prompt.substring(0, 100)}..."`);
-  console.log(`[${timestamp}] MODEL: ${CLAUDE_MODEL}`);
+  console.log(`[${timestamp}] MODEL: ${getActiveModelLabel()}`);
   console.log(`[${timestamp}] SESSION: callId=${callId || 'none'}, existing=${existingSession || 'none'}`);
   console.log(`[${timestamp}] DEVICE PROMPT: ${devicePrompt ? 'Yes (' + devicePrompt.substring(0, 30) + '...)' : 'No'}`);
 
@@ -674,7 +821,7 @@ app.post('/ask-structured', async (req, res) => {
   });
 
   console.log(`[${timestamp}] STRUCTURED QUERY: "${String(prompt).substring(0, 100)}..."`);
-  console.log(`[${timestamp}] MODEL: ${CLAUDE_MODEL}`);
+  console.log(`[${timestamp}] MODEL: ${getActiveModelLabel()}`);
   console.log(`[${timestamp}] SESSION: callId=${callId || 'none'}, existing=${callId ? (sessions.has(callId) ? 'yes' : 'no') : 'none'}`);
 
   try {
@@ -786,8 +933,9 @@ app.post('/end-session', (req, res) => {
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    service: 'claude-api-server',
+    service: 'ai-backend',
     backend: AI_BACKEND,
+    model: getActiveModelLabel(),
     auth: API_TOKEN ? 'token' : 'none',
     timestamp: new Date().toISOString()
   });
@@ -799,10 +947,10 @@ app.get('/health', (req, res) => {
  */
 app.get('/', (req, res) => {
   res.json({
-    service: 'Claude HTTP API Server',
-    version: '1.2.0',
+    service: 'AI Backend HTTP Server',
+    version: '1.2.1',
     endpoints: {
-      'POST /ask': 'Send a prompt to Claude',
+      'POST /ask': 'Send a prompt to the AI backend',
       'POST /ask-structured': 'Send a prompt and return validated JSON (n8n)',
       'GET /health': 'Health check'
     }
@@ -812,7 +960,7 @@ app.get('/', (req, res) => {
 // Start server
 app.listen(PORT, BIND_HOST, () => {
   console.log('='.repeat(64));
-  console.log('Claude HTTP API Server');
+  console.log('AI Backend HTTP Server');
   console.log('='.repeat(64));
   console.log(`\nListening on: http://${BIND_HOST}:${PORT}`);
   console.log(`Health check: http://${BIND_HOST}:${PORT}/health`);
@@ -821,7 +969,7 @@ app.listen(PORT, BIND_HOST, () => {
     console.warn('\nWARNING: binding to a non-loopback address with auth disabled.');
     console.warn('Set CLAUDE_API_TOKEN before exposing this server to a network.\n');
   }
-  console.log('\nReady to receive Claude queries from voice interface.\n');
+  console.log('\nReady to receive AI queries from voice interface.\n');
 });
 
 // Graceful shutdown

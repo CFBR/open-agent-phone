@@ -403,4 +403,42 @@ test('docker compose generation', async (t) => {
     const compose = generateDockerCompose(config);
     assert.ok(!compose.includes('kokoro-tts'), 'should not include Kokoro for a cloud TTS provider');
   });
+
+  await t.test('writes OpenCode AI backend settings and AI aliases', () => {
+    const config = {
+      server: {
+        externalIp: '192.168.1.50',
+        httpPort: 3000,
+        claudeApiPort: 3333,
+        claudeApiToken: 'shared-token'
+      },
+      sip: {
+        domain: '3cx.local',
+        registrar: '192.168.1.10'
+      },
+      devices: [],
+      api: {
+        ttsProvider: 'elevenlabs',
+        aiBackend: 'opencode',
+        opencodeModel: 'opencode-go/deepseek-v4.1-flash',
+        opencodeAutoApprove: true
+      },
+      paths: {
+        voiceApp: '/app/voice-app'
+      },
+      secrets: {
+        drachtio: 'drachtio-secret',
+        freeswitch: 'fs-secret'
+      },
+      deployment: { mode: 'both' }
+    };
+
+    const envFile = generateEnvFile(config);
+    assert.ok(envFile.includes('AI_BACKEND=opencode'));
+    assert.ok(envFile.includes('OPENCODE_MODEL=opencode-go/deepseek-v4.1-flash'));
+    assert.ok(envFile.includes('OPENCODE_AUTO_APPROVE=1'));
+    assert.ok(envFile.includes('AI_API_TOKEN=shared-token'));
+    assert.ok(envFile.includes('AI_API_URL=http://localhost:3333'));
+    assert.ok(envFile.includes('CLAUDE_API_TOKEN=shared-token'));
+  });
 });
