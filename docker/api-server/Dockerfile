@@ -39,6 +39,7 @@ ENV NODE_ENV=production \
     OLLAMA_URL=http://ollama:11434 \
     OLLAMA_MODEL=llama3.2:3b \
     OPENCODE_AUTO_APPROVE=0 \
+    CLAUDE_DANGEROUS_PERMISSIONS=0 \
     CLAUDE_MODEL=claude-sonnet-4-20250514
 
 WORKDIR /app

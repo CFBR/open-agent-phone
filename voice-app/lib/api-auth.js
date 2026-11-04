@@ -10,6 +10,7 @@
  * running Claude queries through the voice app.
  */
 
+const crypto = require('node:crypto');
 const logger = require('./logger');
 
 // Read the token lazily so runtime env changes (and tests) take effect.
@@ -21,10 +22,7 @@ function timingSafeEqual(a, b) {
   const ba = Buffer.from(String(a));
   const bb = Buffer.from(String(b));
   if (ba.length !== bb.length) return false;
-  // Constant-time compare
-  let diff = 0;
-  for (let i = 0; i < ba.length; i++) diff |= ba[i] ^ bb[i];
-  return diff === 0;
+  return crypto.timingSafeEqual(ba, bb);
 }
 
 /**

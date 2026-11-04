@@ -403,6 +403,19 @@ async function setupAIBackend(config) {
     config.api.opencodeModel = opencode.model;
     config.api.opencodeAutoApprove = opencode.autoApprove;
     console.log(chalk.gray('  OpenCode uses its own auth store. Run "opencode auth login" if needed.\n'));
+  } else if (answers.aiBackend === 'claude') {
+    const claude = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'dangerous',
+        message: 'Allow Claude CLI to skip permission prompts?',
+        default: config.api.claudeDangerousPermissions === true
+      }
+    ]);
+    config.api.claudeDangerousPermissions = claude.dangerous;
+    if (claude.dangerous) {
+      console.log(chalk.yellow('  Only enable this on a trusted host with a token-protected API server.\n'));
+    }
   } else if (answers.aiBackend === 'custom') {
     const custom = await inquirer.prompt([
       {
@@ -836,6 +849,7 @@ function createDefaultConfig() {
       aiBackend: 'ollama',
       opencodeModel: '',
       opencodeAutoApprove: false,
+      claudeDangerousPermissions: false,
       ollamaUrl: 'http://localhost:11434',
       ollamaModel: 'llama3.2:3b',
       sttProvider: 'openrouter',
