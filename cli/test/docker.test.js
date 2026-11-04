@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { generateDockerCompose, generateEnvFile } from '../lib/docker.js';
+import { generateDockerCompose, generateEnvFile, parseComposePsOutput, parseDockerPsOutput } from '../lib/docker.js';
 
 test('docker compose generation', async (t) => {
   await t.test('generates compose with default port 5060 when no drachtioPort specified', () => {
@@ -316,5 +316,49 @@ test('docker compose generation', async (t) => {
     const envFile = generateEnvFile(config);
     assert.ok(envFile.includes('STT_PROVIDER=local'), 'should write STT_PROVIDER=local');
     assert.ok(envFile.includes('WHISPER_MODEL=Systran/faster-whisper-base'), 'should write the Whisper model');
+  });
+
+  await t.test('parses compose ps JSON lines', () => {
+    const output = [
+      '{"Name":"drachtio","State":"running","Service":"drachtio"}',
+      '{"Name":"voice-app","State":"running","Service":"voice-app"}'
+    ].join('\n');
+
+    assert.deepStrictEqual(parseComposePsOutput(output), [
+      { name: 'drachtio', status: 'running' },
+      { name: 'voice-app', status: 'running' }
+    ]);
+  });
+
+  await t.test('parses compose ps JSON arrays', () => {
+    const output = JSON.stringify([
+      { Name: 'freeswitch', State: 'running' },
+      { Service: 'kokoro-tts', Status: 'exited' }
+    ]);
+
+    assert.deepStrictEqual(parseComposePsOutput(output), [
+      { name: 'freeswitch', status: 'running' },
+      { name: 'kokoro-tts', status: 'exited' }
+    ]);
+  });
+
+  await t.test('parses and filters docker ps fallback output', () => {
+    const output = [
+      'voice-app\tUp 2 hours',
+      'drachtio\tUp 2 hours',
+      'unrelated\tUp 10 minutes',
+      'faster-whisper\tExited (0) 5 minutes ago'
+    ].join('\n');
+
+    assert.deepStrictEqual(parseDockerPsOutput(output), [
+      { name: 'voice-app', status: 'Up 2 hours' },
+      { name: 'drachtio', status: 'Up 2 hours' },
+      { name: 'faster-whisper', status: 'Exited (0) 5 minutes ago' }
+    ]);
+  });
+
+  await t.test('returns empty arrays for empty status output', () => {
+    assert.deepStrictEqual(parseComposePsOutput(''), []);
+    assert.deepStrictEqual(parseDockerPsOutput(''), []);
   });
 });
