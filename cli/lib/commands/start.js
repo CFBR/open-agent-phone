@@ -5,7 +5,7 @@ import path from 'path';
 import { loadConfig, configExists, getInstallationType } from '../config.js';
 import { checkDocker, writeDockerConfig, startContainers } from '../docker.js';
 import { startServer, isServerRunning, buildApiServerEnv } from '../process-manager.js';
-import { isClaudeInstalled, sleep } from '../utils.js';
+import { isClaudeInstalled, isOpenCodeInstalled, sleep } from '../utils.js';
 import { checkClaudeApiServer } from '../network.js';
 import { runPrereqChecks } from '../prereqs.js';
 
@@ -67,6 +67,9 @@ async function startApiServer(config) {
   if (aiBackend === 'claude' && !(await isClaudeInstalled())) {
     console.log(chalk.yellow('⚠️  Claude CLI not found'));
     console.log(chalk.gray('  Install from: https://claude.com/download\n'));
+  } else if (aiBackend === 'opencode' && !(await isOpenCodeInstalled())) {
+    console.log(chalk.yellow('⚠️  OpenCode CLI not found'));
+    console.log(chalk.gray('  Install from: https://opencode.ai\n'));
   }
 
   // Verify path exists
@@ -247,6 +250,9 @@ async function startBoth(config, isPiMode) {
   if (!isPiMode && aiBackend === 'claude' && !(await isClaudeInstalled())) {
     console.log(chalk.yellow('⚠️  Claude CLI not found'));
     console.log(chalk.gray('  Install from: https://claude.com/download\n'));
+  } else if (!isPiMode && aiBackend === 'opencode' && !(await isOpenCodeInstalled())) {
+    console.log(chalk.yellow('⚠️  OpenCode CLI not found'));
+    console.log(chalk.gray('  Install from: https://opencode.ai\n'));
   }
 
   // In Pi mode, verify API server is reachable

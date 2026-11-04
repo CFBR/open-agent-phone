@@ -7,7 +7,8 @@ import {
   isServerRunning,
   startServer,
   stopServer,
-  getServerPid
+  getServerPid,
+  buildApiServerEnv
 } from '../lib/process-manager.js';
 
 // Test PID file location
@@ -52,6 +53,23 @@ test('process-manager module', async (t) => {
     await stopServer(TEST_PID_FILE);
     assert.strictEqual(fs.existsSync(TEST_PID_FILE), false);
     assert.strictEqual(await isServerRunning(TEST_PID_FILE), false);
+  });
+
+  await t.test('buildApiServerEnv maps OpenCode settings and AI aliases', () => {
+    const env = buildApiServerEnv({
+      api: {
+        aiBackend: 'opencode',
+        opencodeModel: 'opencode-go/deepseek-v4.1-flash',
+        opencodeAutoApprove: true
+      },
+      server: { claudeApiToken: 'shared-token' }
+    });
+
+    assert.strictEqual(env.AI_BACKEND, 'opencode');
+    assert.strictEqual(env.OPENCODE_MODEL, 'opencode-go/deepseek-v4.1-flash');
+    assert.strictEqual(env.OPENCODE_AUTO_APPROVE, '1');
+    assert.strictEqual(env.AI_API_TOKEN, 'shared-token');
+    assert.strictEqual(env.CLAUDE_API_TOKEN, 'shared-token');
   });
 
   // Cleanup

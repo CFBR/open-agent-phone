@@ -240,12 +240,15 @@ The container image is pinned by digest, exposes port 7000, and serves the OpenA
 
 ## AI Backend
 
-The `claude-api-server` wraps any AI backend accessible via HTTP. By default it calls a local Ollama model; the query contract is fully swappable:
+The `claude-api-server` directory name is historical. It routes to any supported AI backend:
 
 - **Ollama** (default) — local, free, runs in Docker or on the host
+- **OpenCode** — spawns `opencode run` with any configured model, such as `opencode-go/deepseek-v4.1-flash`
 - **Claude Code CLI** — spawns `claude` with session management
-- **Any OpenAI-compatible API** — OpenAI, OpenRouter, or a custom endpoint
-- **Local LLM** (Ollama, vLLM, etc.) — configure via `AI_BACKEND_URL`
+- **OpenAI-compatible APIs** — OpenAI, OpenRouter, Nano-GPT, or a custom endpoint
+- **Local LLM** — Ollama or any OpenAI-compatible server via `AI_BACKEND_URL`
+
+The voice app uses provider-neutral `AI_API_URL` and `AI_API_TOKEN`. The older `CLAUDE_API_URL` and `CLAUDE_API_TOKEN` names still work.
 
 See the [API Query Contract](voice-app/API-QUERY-CONTRACT.md) for the protocol between voice-app and the AI backend.
 

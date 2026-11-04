@@ -17,9 +17,11 @@ const { extractVoiceLine } = require('./voice-response');
 // Dependencies injected via setupRoutes()
 let claudeBridge = null;
 
-// Claude API server URL (same as used by claudeBridge)
-const CLAUDE_API_URL = process.env.CLAUDE_API_URL || 'http://localhost:3333';
-const CLAUDE_API_TOKEN = process.env.CLAUDE_API_TOKEN || '';
+// AI backend server URL (same as used by claudeBridge)
+const CLAUDE_API_URL = process.env.AI_API_URL
+  || process.env.CLAUDE_API_URL
+  || 'http://localhost:3333';
+const CLAUDE_API_TOKEN = process.env.AI_API_TOKEN || process.env.CLAUDE_API_TOKEN || '';
 
 function claudeApiHeaders() {
   return CLAUDE_API_TOKEN

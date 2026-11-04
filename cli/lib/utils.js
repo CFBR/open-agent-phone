@@ -60,6 +60,20 @@ export async function isClaudeInstalled() {
 }
 
 /**
+ * Check if the OpenCode CLI is installed
+ * @returns {Promise<boolean>}
+ */
+export async function isOpenCodeInstalled() {
+  return new Promise((resolve) => {
+    const check = spawn('which', ['opencode']);
+    check.on('close', (code) => {
+      resolve(code === 0);
+    });
+    check.on('error', () => resolve(false));
+  });
+}
+
+/**
  * Sleep for specified milliseconds
  * @param {number} ms - Milliseconds to sleep
  * @returns {Promise<void>}
